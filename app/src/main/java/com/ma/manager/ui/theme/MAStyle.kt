@@ -36,6 +36,12 @@ object MAStyle {
     @Composable fun barIcon() = if (isDark()) Color(0xFFBDBDBD) else Color(0xFF555555)
     @Composable fun barIconLight() = if (isDark()) Color(0xFF616161) else Color(0xFFB4B4B4)
 
+    /**
+     * MT 风格多选选中行：整行纯色高亮，不显示勾选图标。
+     * 浅色主题取 MT 2.26.11 截图实测色 #66BFDF；深色主题给对应的低明度蓝。
+     */
+    @Composable fun selectedRowBg() = if (isDark()) Color(0xFF2C5A70) else Color(0xFF66BFDF)
+
     /** Shadow falloff measured from the screenshot (alpha of black, 0 = at the edge). */
     val shadowStops: Array<Pair<Float, Color>> = arrayOf(
         0.00f to Color.Black.copy(alpha = 0.416f),

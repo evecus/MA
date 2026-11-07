@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CollectionsBookmark
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -39,6 +40,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ma.manager.data.FileItem
 import com.ma.manager.data.FileKind
+import com.ma.manager.data.PaneSide
 import com.ma.manager.ui.theme.MAStyle
 
 private class MenuCell(
@@ -60,6 +62,8 @@ fun LongPressMenu(
     targets: List<FileItem>,
     batchMode: Boolean,
     otherPaneIsZip: Boolean = false,
+    /** 长按文件所在窗口（源窗口），决定复制/添加/移动的方向箭头。 */
+    sourceSide: PaneSide = PaneSide.LEFT,
     onDismiss: () -> Unit,
     onCopy: () -> Unit,
     onMove: () -> Unit,
@@ -105,11 +109,16 @@ fun LongPressMenu(
         cells += MenuCell(Icons.Default.Check, "打开方式…") { act(onOpenWith)() }
         cells += MenuCell(Icons.Default.Error, "属性") { act(onProperties)() }
     } else {
-        cells += MenuCell(
-            Icons.Default.Add,
-            if (otherPaneIsZip) "<- 添加到压缩包" else "<- 添加"
-        ) { act(onCopy)() }
-        cells += MenuCell(Icons.Default.ContentCut, "<- 移动", !otherPaneIsZip) { act(onMove)() }
+        // 方向由「源窗口」决定：长按左窗口的文件 → 操作到右窗口，箭头 -> 向右；
+        // 长按右窗口的文件 → 操作到左窗口，箭头 <- 向左。复制/添加/移动三项统一镜像。
+        // 文案由「目标窗口」决定：另一侧是 zip:// 压缩包预览 → 添加；普通目录 → 复制。
+        val toRight = sourceSide == PaneSide.LEFT
+        val arrow = if (toRight) "->" else "<-"
+        val transferLabel = if (otherPaneIsZip) "添加" else "复制"
+        val transferIcon = if (otherPaneIsZip) Icons.Default.Add else Icons.Default.ContentCopy
+
+        cells += MenuCell(transferIcon, "$transferLabel $arrow") { act(onCopy)() }
+        cells += MenuCell(Icons.Default.ContentCut, "移动 $arrow", !otherPaneIsZip) { act(onMove)() }
         cells += MenuCell(Icons.Default.Delete, "删除") { act(onDelete)() }
         cells += MenuCell(Icons.Default.Edit, if (batchMode) "批量重命名" else "重命名") { act(onRename)() }
         cells += MenuCell(Icons.Default.Build, "工具") { toolsExpanded = true }

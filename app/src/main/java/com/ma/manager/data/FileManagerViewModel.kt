@@ -426,8 +426,9 @@ class FileManagerViewModel(app: Application) : AndroidViewModel(app) {
     fun isOtherPaneArchive(side: PaneSide): Boolean = otherPanePath(side).startsWith("zip://")
 
     /**
-     * 长按「<- 添加」：另一窗口为普通目录 → 复制过去；
-     * 另一窗口为压缩包预览 → 把文件/文件夹添加进该压缩包
+     * 长按菜单的「复制/添加」：另一窗口为普通目录 → 文案「复制」，复制过去；
+     * 另一窗口为压缩包预览 → 文案「添加」，把文件/文件夹添加进该压缩包。
+     * 方向箭头由长按文件所在窗口决定，与此处目标类型无关（见 LongPressMenu）。
      * （ZIP 类可直接追加；添加到预览中当前所在的子目录下）。
      */
     fun addOrCopyToOtherPane(side: PaneSide, items: List<FileItem>) {

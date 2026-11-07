@@ -31,7 +31,6 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InstallMobile
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.VideoFile
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -171,8 +170,9 @@ fun FileListItem(
     onSwipeSelect: () -> Unit = {},
     menu: (@Composable () -> Unit)? = null
 ) {
+    // MT 风格：多选只用整行纯色高亮表达选中态，不叠加勾选图标。
     val bg = when {
-        isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+        isSelected -> MAStyle.selectedRowBg()
         isHighlighted -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.28f)
         else -> Color.Transparent
     }
@@ -241,14 +241,7 @@ fun FileListItem(
                     )
                 }
             }
-            if (isSelected) {
-                Icon(
-                    Icons.Default.CheckCircle,
-                    contentDescription = "已选中",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+            // 多选不画勾选图标：选中态已由整行高亮表达（对齐 MT）。
         }
         menu?.invoke()
     }
