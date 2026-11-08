@@ -29,7 +29,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -49,10 +53,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ma.manager.util.CodeFolding
 import com.ma.manager.util.CodeLanguage
 import com.ma.manager.util.EditorThemes
-import com.ma.manager.util.FoldRange
 import com.ma.manager.util.SyntaxHighlighter
 import java.io.File
 import java.nio.charset.Charset
@@ -60,11 +62,12 @@ import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.launch
 
 /**
- * MA 管理器风格的代码/文本编辑器：
- *  - 顶部工具栏（菜单 / 跳转行 / 撤销 / 重做 / 保存 / 编辑模式 / 更多）
- *  - 信息行：文件名 · 行:列 · 字符编码（可点击切换）
- *  - 行号槽 + 代码折叠标记（点击折叠/展开，点击行号选中整行）
- *  - 多语言语法高亮（YAML/JSON/XML/Kotlin/Java/Python/Go/C/...）
+ * MT 管理器风格的代码/文本编辑器（对齐 2.26.11 截图）：
+ *  - 顶部工具栏图标均匀分布；图钉倾斜；撤销/重做按历史栈置灰
+ *  - 信息行：文件名 · 行:列 · 字符编码（深底浅字，与工具栏间有细分隔线）
+ *  - 行号槽：浅灰底 + 右侧竖线 + 连续行号（不做代码折叠）
+ *  - 当前行浅黄高亮、自动换行箭头、缩进参考线
+ *  - 语法配色：深藏青关键字 / 绿色字符串 / 灰色斜体注释
  *  - 底部符号栏：→ / + - * = <
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,7 +101,12 @@ fun TextEditorScreen(
     var langAuto by remember { mutableStateOf(true) }
     var wrapEnabled by remember { mutableStateOf(wrap) }
     var fontSize by remember { mutableStateOf(13f) }
-    var collapsed by remember { mutableStateOf(setOf<Int>()) }
+    // MT 风格显示开关（均有真实状态支撑，不做无效菜单项）
+    var showLineNumbers by remember { mutableStateOf(true) }
+    var syntaxEnabled by remember { mutableStateOf(true) }
+    var wrapArrowEnabled by remember { mutableStateOf(true) }
+    var indentGuideEnabled by remember { mutableStateOf(true) }
+    var monoFontEnabled by remember { mutableStateOf(true) }
 
     var showFind by remember { mutableStateOf(false) }
     var findText by remember { mutableStateOf("") }
@@ -129,17 +137,19 @@ fun TextEditorScreen(
     val lineHeightSp = fontSize * 1.4f
     val lineHeightPx = with(density) { lineHeightSp.sp.toPx() }
     val monoStyle = TextStyle(
-        fontFamily = FontFamily.Monospace,
+        fontFamily = if (monoFontEnabled) FontFamily.Monospace else FontFamily.Default,
         fontSize = fontSize.sp,
         lineHeight = lineHeightSp.sp,
         color = palette.plain
     )
+    // MT：当前行浅黄高亮（深色主题给对应低明度色）
+    val currentLineBg = if (isDark) Color(0xFF3A3620) else Color(0xFFFDFAE5)
 
     val text = textValue.text
     val lines = remember(text) { text.split('\n') }
-    val highlighted = remember(text, lang, palette) { SyntaxHighlighter.highlightLines(text, lang, palette) }
-    val foldRanges = remember(text, lang) { CodeFolding.compute(text, lang) }
-    val foldByStart = remember(foldRanges) { foldRanges.associateBy { it.startLine } }
+    val highlighted = remember(text, lang, palette, syntaxEnabled) {
+        if (syntaxEnabled) SyntaxHighlighter.highlightLines(text, lang, palette) else null
+    }
     val lineStarts = remember(lines) {
         val arr = IntArray(lines.size + 1)
         var acc = 0
@@ -147,12 +157,18 @@ fun TextEditorScreen(
         arr[lines.size] = acc
         arr
     }
-    val visibleLines = remember(lines, foldRanges, collapsed) {
-        val hidden = mutableSetOf<Int>()
-        for (f in foldRanges) {
-            if (f.startLine in collapsed) for (l in f.startLine + 1..f.endLine) if (l < lines.size) hidden.add(l)
+    // MT 编辑器不做代码折叠：每个逻辑行都有连续行号。
+    val visibleLines = remember(lines) { lines.indices.toList() }
+
+    /** 原文本 offset 落在哪个逻辑行（用于缩进参考线与软换行标记）。 */
+    fun logicalLineOf(offset: Int): Int {
+        var lo = 0
+        var hi = lines.size - 1
+        while (lo < hi) {
+            val mid = (lo + hi + 1) ushr 1
+            if (lineStarts[mid] <= offset) lo = mid else hi = mid - 1
         }
-        lines.indices.filter { it !in hidden }
+        return lo.coerceIn(0, (lines.size - 1).coerceAtLeast(0))
     }
     val padTopPx = with(density) { 4.dp.toPx() }
 
@@ -182,8 +198,8 @@ fun TextEditorScreen(
         return visibleLines.getOrElse(vi) { lines.size - 1 }
     }
 
-    val transformation = remember(highlighted, foldRanges, collapsed, lines) {
-        EditorTransformation(lines, highlighted, foldRanges, collapsed, lineStarts)
+    val transformation = remember(highlighted, lines) {
+        EditorTransformation(highlighted)
     }
 
     // Cursor position (line:col) for the info row.
@@ -311,6 +327,7 @@ fun TextEditorScreen(
                     // Row 1: MA-style icon toolbar
                     Row(
                         Modifier.fillMaxWidth().height(44.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box {
@@ -321,39 +338,86 @@ fun TextEditorScreen(
                                     onClick = { showMenu = false; onSave(text, currentCharset); dirty = false }
                                 )
                                 DropdownMenuItem(
+                                    text = { Text("保存并退出") },
+                                    onClick = {
+                                        showMenu = false
+                                        onSave(text, currentCharset)
+                                        dirty = false
+                                        onClose()
+                                    }
+                                )
+                                DropdownMenuItem(
                                     text = { Text("查找替换") },
                                     onClick = { showMenu = false; showFind = !showFind }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("跳转到行") },
+                                    text = { Text("转到指定行") },
                                     onClick = { showMenu = false; showGoto = true }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("字符编码") },
+                                    text = { Text("指定编码重新加载") },
                                     onClick = { showMenu = false; showCharset = true }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (syntaxEnabled) "✓ 语法高亮" else "语法高亮") },
+                                    onClick = { showMenu = false; syntaxEnabled = !syntaxEnabled }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("语法语言") },
                                     onClick = { showMenu = false; showLang = true }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("退出") },
+                                    text = { Text(if (editMode) "只读模式" else "关闭只读模式") },
+                                    onClick = { showMenu = false; editMode = !editMode }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("重新加载文件") },
+                                    onClick = {
+                                        showMenu = false
+                                        val bytes = fileBytes
+                                        if (bytes != null) {
+                                            val decoded = runCatching { String(bytes, currentCharset) }.getOrNull()
+                                            if (decoded != null) {
+                                                undoStack.clear(); redoStack.clear()
+                                                textValue = TextFieldValue(decoded, TextRange(0))
+                                                dirty = false
+                                                statusMsg = "已重新加载文件"
+                                            }
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("关闭文件") },
                                     onClick = { showMenu = false; requestClose() }
                                 )
                             }
                         }
-                        EditorBarIcon(Icons.Default.PushPin, "跳转到行") { showGoto = true }
-                        EditorBarIcon(Icons.AutoMirrored.Filled.Undo, "撤销") { undo() }
-                        EditorBarIcon(Icons.AutoMirrored.Filled.Redo, "重做") { redo() }
+                        EditorBarIcon(
+                            icon = Icons.Default.PushPin,
+                            desc = "转到指定行",
+                            onClick = { showGoto = true },
+                            rotation = -45f
+                        )
+                        EditorBarIcon(
+                            icon = Icons.AutoMirrored.Filled.Undo,
+                            desc = "撤销",
+                            onClick = { undo() },
+                            enabled = undoStack.isNotEmpty()
+                        )
+                        EditorBarIcon(
+                            icon = Icons.AutoMirrored.Filled.Redo,
+                            desc = "重做",
+                            onClick = { redo() },
+                            enabled = redoStack.isNotEmpty()
+                        )
                         EditorBarIcon(Icons.Default.Save, "保存") {
                             onSave(text, currentCharset)
                             dirty = false
                         }
                         EditorBarIcon(
                             Icons.Default.Edit,
-                            if (editMode) "切换只读预览" else "切换编辑模式"
+                            if (editMode) "只读模式" else "关闭只读模式"
                         ) { editMode = !editMode }
-                        Spacer(Modifier.weight(1f))
                         Box {
                             EditorBarIcon(Icons.Default.MoreVert, "更多") { showMore = true }
                             DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
@@ -361,6 +425,22 @@ fun TextEditorScreen(
                                 text = { Text(if (wrapEnabled) "✓ 自动换行" else "自动换行") },
                                 leadingIcon = { Icon(Icons.Default.WrapText, null) },
                                 onClick = { showMore = false; wrapEnabled = !wrapEnabled }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (wrapArrowEnabled) "✓ 显示自动换行箭头" else "显示自动换行箭头") },
+                                onClick = { showMore = false; wrapArrowEnabled = !wrapArrowEnabled }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (showLineNumbers) "✓ 显示行号信息" else "显示行号信息") },
+                                onClick = { showMore = false; showLineNumbers = !showLineNumbers }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (indentGuideEnabled) "✓ 显示缩进参考线" else "显示缩进参考线") },
+                                onClick = { showMore = false; indentGuideEnabled = !indentGuideEnabled }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (monoFontEnabled) "✓ 等宽字体" else "等宽字体") },
+                                onClick = { showMore = false; monoFontEnabled = !monoFontEnabled }
                             )
                             DropdownMenuItem(
                                 text = { Text("增大字号") },
@@ -379,7 +459,7 @@ fun TextEditorScreen(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text(if (editMode) "切换只读预览" else "切换编辑模式") },
+                                text = { Text(if (editMode) "只读模式" else "关闭只读模式") },
                                 leadingIcon = { Icon(Icons.Default.Edit, null) },
                                 onClick = { showMore = false; editMode = !editMode }
                             )
@@ -393,12 +473,19 @@ fun TextEditorScreen(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("关闭") },
+                                text = { Text("关闭文件") },
                                 onClick = { showMenu = false; showMore = false; requestClose() }
                             )
                             }
                         }
                     }
+                    // MT：图标行与信息行之间一条细分隔线
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(Color(0xFF4A4A4A))
+                    )
                     // Row 2: file name · line:col · charset
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
@@ -410,19 +497,18 @@ fun TextEditorScreen(
                             fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
+                            modifier = Modifier.weight(1f)
                         )
-                        Spacer(Modifier.weight(1f))
                         Text(
                             "$cursorLine:$cursorCol",
                             fontSize = 11.sp,
-                            color = androidx.compose.ui.graphics.Color(0xFFCCCCCC),
+                            color = Color(0xFFCCCCCC),
                             modifier = Modifier.clickable { showGoto = true }.padding(horizontal = 6.dp)
                         )
                         Text(
                             charsetName(currentCharset),
                             fontSize = 11.sp,
-                            color = androidx.compose.ui.graphics.Color(0xFF64B5F6),
+                            color = Color(0xFFCCCCCC),
                             modifier = Modifier.clickable { showCharset = true }.padding(horizontal = 4.dp)
                         )
                     }
@@ -503,8 +589,9 @@ fun TextEditorScreen(
             Column(Modifier.fillMaxWidth().verticalScroll(vScroll)) {
             Row(Modifier.fillMaxWidth()) {
                 // Line-number + fold gutter (only meaningful without soft wrap)
-                if (!wrapEnabled) {
-                    val gutterWidth = 64.dp
+                if (!wrapEnabled && showLineNumbers) {
+                    // MT：行号槽约 42dp，浅灰底 + 右侧细竖线，只有连续行号。
+                    val gutterWidth = 42.dp
                     val contentHeight = with(density) {
                         if (editorHeightPx > 0) editorHeightPx.toDp()
                         else ((lines.size + 1) * lineHeightPx).toDp()
@@ -517,59 +604,40 @@ fun TextEditorScreen(
                         Modifier
                             .width(gutterWidth)
                             .height(contentHeight)
-                            .pointerInput(foldRanges, collapsed, lines.size, lineHeightPx) {
+                            .background(if (isDark) Color(0xFF1B1B1B) else Color(0xFFF8F8F8))
+                            .pointerInput(lines.size, lineHeightPx) {
                                 detectTapGestures { pos ->
                                     val line = gutterLineAt(pos.y)
-                                    val fold = foldByStart[line]
-                                    val foldZonePx = with(density) { 30.dp.toPx() }
-                                    if (fold != null && pos.x < foldZonePx) {
-                                        collapsed = if (line in collapsed) collapsed - line else collapsed + line
-                                    } else {
-                                        val start = lineStarts[line]
-                                        val end = (start + lines[line].length).coerceAtMost(text.length)
-                                        suppressPush = true
-                                        textValue = textValue.copy(selection = TextRange(start, end))
-                                        suppressPush = false
-                                    }
+                                    val start = lineStarts[line]
+                                    val end = (start + lines[line].length).coerceAtMost(text.length)
+                                    suppressPush = true
+                                    textValue = textValue.copy(selection = TextRange(start, end))
+                                    suppressPush = false
                                 }
                             }
                     ) {
                         val first = ((vScroll.value - padTopPx) / lineHeightPx).toInt().coerceAtLeast(0)
                         val count = (viewport.height / lineHeightPx).toInt() + 3
-                        val numberX = size.width - with(density) { 34.dp.toPx() }
-                        val markerX = with(density) { 4.dp.toPx() }
-                        val previewX = with(density) { 16.dp.toPx() }
+                        val rightPad = with(density) { 10.dp.toPx() }
+                        // 右侧竖直分隔线
+                        drawLine(
+                            color = if (isDark) Color(0xFF333333) else Color(0xFFE6E6E6),
+                            start = Offset(size.width - 1f, 0f),
+                            end = Offset(size.width - 1f, size.height),
+                            strokeWidth = with(density) { 1.dp.toPx() }
+                        )
                         for (vi in first until minOf(visibleLines.size, first + count)) {
                             val i = visibleLines[vi]
                             val y = gutterLineTop(vi)
-                            val fold = foldByStart[i]
-                            if (fold != null) {
-                                val marker = if (i in collapsed) "▸" else "▾"
-                                drawText(
-                                    gutterMeasurer, marker,
-                                    topLeft = Offset(markerX, y),
-                                    style = gutterStyle.copy(color = palette.gutterActive)
+                            val label = "${i + 1}"
+                            val w = gutterMeasurer.measure(label, gutterStyle).size.width
+                            drawText(
+                                gutterMeasurer, label,
+                                topLeft = Offset(size.width - rightPad - w.toFloat(), y),
+                                style = gutterStyle.copy(
+                                    color = if (i == cursorLine - 1) palette.gutterActive else palette.gutter
                                 )
-                                val preview = lines[i].trim().take(5)
-                                if (preview.isNotEmpty()) {
-                                    drawText(
-                                        gutterMeasurer, preview,
-                                        topLeft = Offset(previewX, y),
-                                        style = gutterStyle.copy(
-                                            color = palette.gutter,
-                                            fontSize = (fontSize * 0.7f).sp
-                                        )
-                                    )
-                                }
-                            } else {
-                                drawText(
-                                    gutterMeasurer, "${i + 1}",
-                                    topLeft = Offset(numberX, y),
-                                    style = gutterStyle.copy(
-                                        color = if (i == cursorLine - 1) palette.gutterActive else palette.gutter
-                                    )
-                                )
-                            }
+                            )
                         }
                     }
                 }
@@ -604,6 +672,68 @@ fun TextEditorScreen(
                                 else Modifier.wrapContentWidth(Alignment.Start, unbounded = true)
                             )
                             .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .drawBehind {
+                                val layout = layoutResult ?: return@drawBehind
+                                val count = layout.lineCount
+                                if (count == 0) return@drawBehind
+
+                                // 1) 当前行浅黄高亮
+                                val cur = (cursorLine - 1).coerceIn(0, count - 1)
+                                val top = layout.getLineTop(cur)
+                                val bottom = layout.getLineBottom(cur)
+                                drawRect(
+                                    color = currentLineBg,
+                                    topLeft = Offset(0f, top),
+                                    size = Size(size.width, bottom - top)
+                                )
+
+                                // 2) 缩进参考线
+                                if (indentGuideEnabled) {
+                                    val charW = with(density) { (fontSize * 0.6f).sp.toPx() }
+                                    val guideColor = if (isDark) Color(0xFF2A2A2A) else Color(0xFFE6E6E6)
+                                    val first = ((vScroll.value - padTopPx) / lineHeightPx).toInt().coerceAtLeast(0)
+                                    val last = (first + viewport.height / lineHeightPx + 3).toInt()
+                                    for (li in first until minOf(count, last)) {
+                                        val offset = layout.getLineStart(li).coerceIn(0, text.length)
+                                        val srcLine = lines.getOrNull(logicalLineOf(offset)) ?: continue
+                                        val spaces = srcLine.takeWhile { it == ' ' }.length
+                                        if (spaces <= 0) continue
+                                        val x = spaces.toFloat() * charW - charW * 0.5f
+                                        drawLine(
+                                            guideColor,
+                                            Offset(x, layout.getLineTop(li)),
+                                            Offset(x, layout.getLineBottom(li)),
+                                            with(density) { 1.dp.toPx() }
+                                        )
+                                    }
+                                }
+
+                                // 3) 自动换行箭头 ↵ + 续行折角 ⌞
+                                if (wrapEnabled && wrapArrowEnabled) {
+                                    val arrowStyle = TextStyle(
+                                        color = if (isDark) Color(0xFF666666) else Color(0xFFB0B0B0),
+                                        fontSize = (fontSize * 0.8f).sp
+                                    )
+                                    for (li in 0 until count - 1) {
+                                        val end = layout.getLineEnd(li)
+                                        val soft = end < text.length && text[end] != '\n'
+                                        if (!soft) continue
+                                        drawText(
+                                            gutterMeasurer, "↵",
+                                            topLeft = Offset(
+                                                size.width - with(density) { 16.dp.toPx() },
+                                                layout.getLineTop(li)
+                                            ),
+                                            style = arrowStyle
+                                        )
+                                        drawText(
+                                            gutterMeasurer, "⌞",
+                                            topLeft = Offset(0f, layout.getLineTop(li + 1)),
+                                            style = arrowStyle
+                                        )
+                                    }
+                                }
+                            }
                     )
                 }
             }
@@ -631,7 +761,7 @@ fun TextEditorScreen(
     if (showGoto) {
         AlertDialog(
             onDismissRequest = { showGoto = false },
-            title = { Text("跳转到行") },
+            title = { Text("转到指定行") },
             text = {
                 OutlinedTextField(
                     value = gotoText,
@@ -711,7 +841,7 @@ fun TextEditorScreen(
     if (showLang) {
         AlertDialog(
             onDismissRequest = { showLang = false },
-            title = { Text("语法高亮语言") },
+            title = { Text("语法高亮") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Row(
@@ -779,10 +909,19 @@ private val TextRangeZero = androidx.compose.ui.text.TextRange(0)
 private fun EditorBarIcon(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     desc: String,
+    enabled: Boolean = true,
+    rotation: Float = 0f,
     onClick: () -> Unit
 ) {
-    IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
-        Icon(icon, contentDescription = desc, modifier = Modifier.size(20.dp))
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp)) {
+        Icon(
+            icon,
+            contentDescription = desc,
+            tint = if (enabled) Color.White else Color(0xFF757575),
+            modifier = Modifier
+                .size(20.dp)
+                .then(if (rotation != 0f) Modifier.rotate(rotation) else Modifier)
+        )
     }
 }
 
@@ -865,106 +1004,23 @@ private fun commonPrefixLength(a: String, b: String): Int {
 private fun selectMatch(text: String, start: Int, length: Int): TextFieldValue =
     TextFieldValue(text, TextRange(start, start + length))
 
-/** Offset mapping that hides folded lines from the transformed text. */
-private class FoldOffsetMapping(
-    private val lines: List<String>,
-    private val lineStarts: IntArray,
-    private val visible: List<Int>,
-    private val transStarts: IntArray,
-    private val ownerOf: IntArray,
-    private val transformedLength: Int
-) : OffsetMapping {
-
-    private fun lineOf(offset: Int): Int {
-        var lo = 0
-        var hi = lines.size - 1
-        while (lo < hi) {
-            val mid = (lo + hi + 1) / 2
-            if (lineStarts[mid] <= offset) lo = mid else hi = mid - 1
-        }
-        return lo
-    }
-
-    override fun originalToTransformed(offset: Int): Int {
-        val line = lineOf(offset.coerceIn(0, maxOf(0, lineStarts[lines.size] - 1)))
-        val vi = visible.binarySearch(line)
-        if (vi >= 0) return transStarts[vi] + (offset - lineStarts[line])
-        val owner = ownerOf.getOrElse(line) { -1 }
-        if (owner >= 0) {
-            val ovi = visible.binarySearch(owner)
-            if (ovi >= 0) return transStarts[ovi] + lines[owner].length
-        }
-        return transformedLength
-    }
-
-    override fun transformedToOriginal(offset: Int): Int {
-        if (visible.isEmpty()) return 0
-        var lo = 0
-        var hi = visible.size - 1
-        var ans = 0
-        while (lo <= hi) {
-            val mid = (lo + hi) ushr 1
-            if (transStarts[mid] <= offset) { ans = mid; lo = mid + 1 } else hi = mid - 1
-        }
-        val line = visible[ans]
-        val within = (offset - transStarts[ans]).coerceIn(0, lines[line].length)
-        return lineStarts[line] + within
-    }
-}
-
 /**
- * Visual transformation combining syntax highlighting with fold collapsing.
+ * MT 风格：仅做语法高亮，不做代码折叠（行号连续）。
  */
 private class EditorTransformation(
-    private val lines: List<String>,
-    private val highlighted: List<AnnotatedString>?,
-    private val foldRanges: List<FoldRange>,
-    private val collapsed: Set<Int>,
-    private val lineStarts: IntArray
+    private val highlighted: List<AnnotatedString>?
 ) : VisualTransformation {
 
     override fun filter(text: AnnotatedString): TransformedText {
-        val src = text.text
-        if (collapsed.isEmpty() || foldRanges.isEmpty()) {
-            val builder = AnnotatedString.Builder()
-            if (highlighted != null) {
-                for (i in highlighted.indices) {
-                    if (i > 0) builder.append('\n')
-                    builder.append(highlighted[i])
-                }
-            } else {
-                builder.append(src)
-            }
-            return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
-        }
-
-        val hidden = BooleanArray(lines.size)
-        val ownerOf = IntArray(lines.size) { -1 }
-        for (f in foldRanges) {
-            if (f.startLine !in collapsed) continue
-            for (l in f.startLine + 1..f.endLine) {
-                if (l >= lines.size) continue
-                hidden[l] = true
-                if (ownerOf[l] < 0) ownerOf[l] = f.startLine
-            }
-        }
-        val visible = lines.indices.filter { !hidden[it] }
-        val transStarts = IntArray(visible.size)
-        var acc = 0
-        visible.forEachIndexed { vi, li ->
-            transStarts[vi] = acc
-            acc += lines[li].length + 1
-        }
-
         val builder = AnnotatedString.Builder()
-        visible.forEachIndexed { vi, li ->
-            if (vi > 0) builder.append('\n')
-            if (highlighted != null) builder.append(highlighted[li]) else builder.append(lines[li])
+        if (highlighted != null) {
+            for (i in highlighted.indices) {
+                if (i > 0) builder.append('\n')
+                builder.append(highlighted[i])
+            }
+        } else {
+            builder.append(text.text)
         }
-        val transformed = builder.toAnnotatedString()
-        return TransformedText(
-            transformed,
-            FoldOffsetMapping(lines, lineStarts, visible, transStarts, ownerOf, transformed.length)
-        )
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
 }

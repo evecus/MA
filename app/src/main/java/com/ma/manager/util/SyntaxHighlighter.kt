@@ -142,33 +142,36 @@ data class HighlightPalette(
 }
 
 object EditorThemes {
-    /** Light editor palette tuned to resemble MA 管理器的代码页配色. */
+    /**
+     * MT 管理器浅色代码页配色（取自 2.26.11 编辑器截图像素采样）：
+     * 关键字深藏青 #13306A、字符串绿 #187028、注释灰 #8C8C8C 斜体。
+     */
     val Light = HighlightPalette(
         plain = Color(0xFF24292F),
-        keyword = Color(0xFF4B5CC4),
-        type = Color(0xFF7C3AED),
-        function = Color(0xFF8250DF),
-        string = Color(0xFFB45309),
-        number = Color(0xFFB45309),
-        comment = Color(0xFF15803D),
-        annotation = Color(0xFF7C3AED),
-        tag = Color(0xFF0550AE),
-        attribute = Color(0xFF0550AE),
-        property = Color(0xFF4B5CC4),
+        keyword = Color(0xFF13306A),
+        type = Color(0xFF13306A),
+        function = Color(0xFF13306A),
+        string = Color(0xFF187028),
+        number = Color(0xFF187028),
+        comment = Color(0xFF8C8C8C),
+        annotation = Color(0xFF13306A),
+        tag = Color(0xFF13306A),
+        attribute = Color(0xFF13306A),
+        property = Color(0xFF13306A),
         operator = Color(0xFF6E7781),
         punct = Color(0xFF8C959F),
-        variable = Color(0xFFB45309),
-        constant = Color(0xFFB45309),
-        preprocessor = Color(0xFF7C3AED),
-        heading = Color(0xFF0550AE),
-        link = Color(0xFF0550AE),
-        regex = Color(0xFF0A3069),
+        variable = Color(0xFF187028),
+        constant = Color(0xFF187028),
+        preprocessor = Color(0xFF13306A),
+        heading = Color(0xFF13306A),
+        link = Color(0xFF13306A),
+        regex = Color(0xFF13306A),
         added = Color(0xFF116329),
         removed = Color(0xFFCF222E),
         background = Color(0xFFFFFFFF),
-        gutter = Color(0xFF9AA4AE),
-        gutterActive = Color(0xFF4B5CC4),
-        cursor = Color(0xFF4B5CC4),
+        gutter = Color(0xFFA0A0A0),
+        gutterActive = Color(0xFF13306A),
+        cursor = Color(0xFF13306A),
         selection = Color(0xFFBBD3F9)
     )
 
