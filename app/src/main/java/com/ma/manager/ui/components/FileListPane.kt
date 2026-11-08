@@ -2,7 +2,7 @@ package com.ma.manager.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -191,7 +191,7 @@ fun FileListPane(
 
         Box(Modifier.fillMaxSize()) {
             // ---- 加载中 ----
-            AnimatedVisibility(
+            BoxFade(
                 visible = navigating && spinnerReady,
                 enter = fadeIn(tween(MAMotion.Short)),
                 exit = fadeOut(tween(MAMotion.Fast)),
@@ -201,7 +201,7 @@ fun FileListPane(
             }
 
             // ---- 空目录 / 无结果 ----
-            AnimatedVisibility(
+            BoxFade(
                 visible = showEmpty,
                 enter = fadeIn(tween(MAMotion.Medium)) + scaleIn(tween(MAMotion.Medium), initialScale = 0.9f),
                 exit = fadeOut(tween(MAMotion.Fast)),
@@ -549,4 +549,17 @@ private fun tintFor(item: FileItem): Color = when (item.fileKind) {
     FileKind.TEXT -> Color(0xFF78909C)
     FileKind.CODE -> Color(0xFF26C6DA)
     FileKind.OTHER -> Color(0xFF78909C)
+}
+
+
+/** 不带 ColumnScope 接收者的 AnimatedVisibility 封装（嵌套在 Column 里的 Box 中直接调用会被作用域限制拒绝）。 */
+@Composable
+private fun BoxFade(
+    visible: Boolean,
+    enter: androidx.compose.animation.EnterTransition,
+    exit: androidx.compose.animation.ExitTransition,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(visible = visible, modifier = modifier, enter = enter, exit = exit) { content() }
 }
