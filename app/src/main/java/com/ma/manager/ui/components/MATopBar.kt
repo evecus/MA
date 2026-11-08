@@ -1,5 +1,8 @@
 package com.ma.manager.ui.components
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import com.ma.manager.ui.theme.MAMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -61,26 +64,39 @@ fun MATopBar(
                             onClick = onTitleClick
                         )
                 ) {
-                    Text(
-                        text = title,
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        lineHeight = 22.sp,
-                        letterSpacing = 0.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.paddingFromBaseline(top = 27.7.dp)
-                    )
-                    Text(
-                        text = subtitle,
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        lineHeight = 15.sp,
-                        letterSpacing = 0.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.paddingFromBaseline(top = 44.7.dp)
-                    )
+                    // 路径 / 统计信息变化时淡入淡出，不再瞬间跳变
+                    Crossfade(
+                        targetState = title,
+                        animationSpec = tween(MAMotion.Short),
+                        label = "topTitle"
+                    ) { t ->
+                        Text(
+                            text = t,
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            lineHeight = 22.sp,
+                            letterSpacing = 0.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.paddingFromBaseline(top = 27.7.dp)
+                        )
+                    }
+                    Crossfade(
+                        targetState = subtitle,
+                        animationSpec = tween(MAMotion.Short),
+                        label = "topSubtitle"
+                    ) { t ->
+                        Text(
+                            text = t,
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            lineHeight = 15.sp,
+                            letterSpacing = 0.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.paddingFromBaseline(top = 44.7.dp)
+                        )
+                    }
                 }
                 // actions: last 48dp button flush with the right edge
                 CompositionLocalProvider(LocalContentColor provides Color.White) {

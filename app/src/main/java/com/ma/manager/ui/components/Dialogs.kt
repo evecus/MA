@@ -1,8 +1,16 @@
 package com.ma.manager.ui.components
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import com.ma.manager.ui.theme.MAMotion
+import com.ma.manager.ui.theme.MAAlertDialog
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -17,7 +25,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ma.manager.data.ConflictResolution
-import com.ma.manager.ui.theme.MAAnim
 import com.ma.manager.data.FileItem
 import com.ma.manager.data.SortBy
 import com.ma.manager.util.ApkInfo
@@ -34,7 +41,7 @@ fun JumpPathDialog(
     var path by remember { mutableStateOf(currentPath) }
     val clipboard = LocalClipboardManager.current
 
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("跳转路径") },
         text = {
@@ -72,7 +79,7 @@ fun NewFileDialog(
 ) {
     var name by remember { mutableStateOf("") }
 
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("新建") },
         text = {
@@ -109,7 +116,7 @@ fun ConfirmDeleteDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("确认删除") },
         text = {
@@ -139,7 +146,7 @@ fun SortDialog(
     var sort by remember { mutableStateOf(currentSort) }
     var asc by remember { mutableStateOf(ascending) }
 
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("排序方式") },
         text = {
@@ -182,7 +189,7 @@ fun RenameDialog(
     onConfirm: (String) -> Unit
 ) {
     var name by remember { mutableStateOf(item.name) }
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("重命名") },
         text = {
@@ -213,7 +220,7 @@ fun SearchDialog(
 ) {
     var query by remember { mutableStateOf(initialQuery) }
     var content by remember { mutableStateOf(initialContent) }
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("搜索文件") },
         text = {
@@ -247,7 +254,7 @@ fun ConflictDialog(
     name: String,
     onResolve: (ConflictResolution) -> Unit
 ) {
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = { onResolve(ConflictResolution.SKIP) },
         title = { Text("目标已存在") },
         text = { Text("“$name” 已存在，如何处理？") },
@@ -276,11 +283,11 @@ fun ZipCreateDialog(
     var name by remember { mutableStateOf("archive.zip") }
     var password by remember { mutableStateOf("") }
     var format by remember { mutableStateOf(com.ma.manager.util.ArchiveFormat.ZIP) }
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("创建压缩包 ($count 项)") },
         text = {
-            Column {
+            Column(Modifier.animateContentSize(tween(MAMotion.Medium, easing = MAMotion.Standard))) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -311,24 +318,32 @@ fun ZipCreateDialog(
                         )
                     }
                 }
-                if (format.supportsPassword) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("密码（可选）") }
-                    )
-                } else {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = if (format == com.ma.manager.util.ArchiveFormat.SEVENZ)
-                            "7z 使用 LZMA2 压缩（不支持加密）"
-                        else "TAR 格式无压缩${if (format != com.ma.manager.util.ArchiveFormat.TAR) "，外层 ${format.label.removePrefix("TAR.")} 压缩" else ""}",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
+                // 切换格式时，密码框 / 说明文字交叉淡入淡出，对话框高度平滑变化
+                Crossfade(
+                    targetState = format,
+                    animationSpec = tween(MAMotion.Short),
+                    label = "zipFormatExtra"
+                ) { fmt ->
+                    Column {
+                        Spacer(Modifier.height(8.dp))
+                        if (fmt.supportsPassword) {
+                            OutlinedTextField(
+                                value = password,
+                                onValueChange = { password = it },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("密码（可选）") }
+                            )
+                        } else {
+                            Text(
+                                text = if (fmt == com.ma.manager.util.ArchiveFormat.SEVENZ)
+                                    "7z 使用 LZMA2 压缩（不支持加密）"
+                                else "TAR 格式无压缩${if (fmt != com.ma.manager.util.ArchiveFormat.TAR) "，外层 ${fmt.label.removePrefix("TAR.")} 压缩" else ""}",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -349,7 +364,7 @@ fun BatchRenameDialog(
 ) {
     var find by remember { mutableStateOf("") }
     var replace by remember { mutableStateOf("") }
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("批量重命名") },
         text = {
@@ -393,7 +408,7 @@ fun ChmodDialog(
     onConfirm: (String) -> Unit
 ) {
     var octal by remember { mutableStateOf("755") }
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("修改权限 (需 Root)") },
         text = {
@@ -432,7 +447,7 @@ fun BookmarkAddDialog(
 ) {
     var name by remember { mutableStateOf(File(currentPath).name.ifBlank { currentPath }) }
     var path by remember { mutableStateOf(currentPath) }
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("添加书签") },
         text = {
@@ -475,7 +490,7 @@ fun PropertiesDialog(
     onOpenApkInfo: () -> Unit = {}
 ) {
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("属性") },
         text = {
@@ -536,7 +551,7 @@ fun MultiPropertiesDialog(
     val dirs = items.count { it.isDirectory }
     val files = items.size - dirs
     val totalSize = items.filter { !it.isDirectory }.sumOf { it.size }
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("属性 (${items.size} 项)") },
         text = {
@@ -560,7 +575,7 @@ fun HashResultDialog(
     digest: String,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("SHA-256") },
         text = {
@@ -586,41 +601,51 @@ fun HashResultDialog(
 
 @Composable
 fun OpProgressDialog(progress: com.ma.manager.data.OpProgress, onCancel: () -> Unit, onDismiss: () -> Unit) {
-    if (progress.finished) {
-        AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text(progress.title.ifBlank { "操作" }) },
-            text = { Text(progress.message ?: "完成") },
-            confirmButton = {
-                TextButton(onClick = onDismiss) { Text("确定") }
-            }
-        )
-    } else {
-        val animatedFraction by animateFloatAsState(
-            targetValue = progress.fraction,
-            animationSpec = tween(MAAnim.ShortMs),
-            label = "progress"
-        )
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text(progress.title) },
-            text = {
-                Column {
-                    Text(
-                        "${progress.current}/${progress.total}  ${progress.currentName}",
-                        fontSize = 12.sp,
-                        maxLines = 1
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(
-                        progress = { animatedFraction },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+    // 进行中 / 已完成共用同一个对话框，内容淡入淡出切换（不再关掉重开一个新窗口）
+    val animatedFraction by animateFloatAsState(
+        targetValue = progress.fraction,
+        animationSpec = tween(MAMotion.Medium, easing = MAMotion.Standard),
+        label = "opProgress"
+    )
+    MAAlertDialog(
+        onDismissRequest = { if (progress.finished) onDismiss() },
+        title = {
+            Text(
+                if (progress.finished) progress.title.ifBlank { "操作" } else progress.title
+            )
+        },
+        text = {
+            AnimatedContent(
+                targetState = progress.finished,
+                transitionSpec = {
+                    fadeIn(tween(MAMotion.Medium)) togetherWith fadeOut(tween(MAMotion.Fast))
+                },
+                label = "opProgressBody"
+            ) { finished ->
+                if (finished) {
+                    Text(progress.message ?: "完成")
+                } else {
+                    Column {
+                        Text(
+                            "${progress.current}/${progress.total}  ${progress.currentName}",
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { animatedFraction },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
-            },
-            confirmButton = {
+            }
+        },
+        confirmButton = {
+            if (progress.finished) {
+                TextButton(onClick = onDismiss) { Text("确定") }
+            } else {
                 TextButton(onClick = onCancel) { Text("取消", color = MaterialTheme.colorScheme.error) }
             }
-        )
-    }
+        }
+    )
 }

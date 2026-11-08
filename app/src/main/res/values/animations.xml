@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 通过 Dialog 的 window.setWindowAnimations 套用（见 MAMotion.kt） -->
+    <style name="MADialogWindowAnim">
+        <item name="android:windowEnterAnimation">@anim/ma_dialog_enter</item>
+        <item name="android:windowExitAnimation">@anim/ma_dialog_exit</item>
+    </style>
+</resources>

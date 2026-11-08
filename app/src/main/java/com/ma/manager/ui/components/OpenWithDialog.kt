@@ -1,5 +1,6 @@
 package com.ma.manager.ui.components
 
+import com.ma.manager.ui.theme.MAAlertDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -43,7 +44,7 @@ fun OpenWithDialog(
         add(OpenChoice.SHARE to "分享")
     }
 
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("打开方式") },
         text = {

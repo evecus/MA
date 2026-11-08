@@ -1,5 +1,10 @@
 package com.ma.manager.ui.screens
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import com.ma.manager.ui.theme.MAMotion
+import com.ma.manager.ui.theme.staggerIn
+import com.ma.manager.ui.theme.MAAlertDialog
 import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
@@ -95,14 +100,19 @@ fun ApkInfoScreen(
             )
         }
     ) { padding ->
-        if (loading) {
+        // 解析中 → 内容（或失败提示）：淡入淡出，内容区块再依次浮现
+        val phase = if (loading) 0 else if (info == null) 1 else 2
+        Crossfade(
+            targetState = phase,
+            animationSpec = tween(MAMotion.Medium),
+            label = "apkInfoPhase"
+        ) { ph ->
+        val apk = info
+        if (ph == 0) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            return@Scaffold
-        }
-        val apk = info
-        if (apk == null) {
+        } else if (apk == null) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -111,9 +121,7 @@ fun ApkInfoScreen(
             ) {
                 Text("无法解析该 APK\n可能文件已损坏或不是有效的 APK", style = MaterialTheme.typography.bodyMedium)
             }
-            return@Scaffold
-        }
-
+        } else {
         Column(
             Modifier
                 .fillMaxSize()
@@ -121,7 +129,7 @@ fun ApkInfoScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.staggerIn(0), verticalAlignment = Alignment.CenterVertically) {
                 if (icon != null) {
                     Image(
                         bitmap = icon!!.asImageBitmap(),
@@ -145,7 +153,7 @@ fun ApkInfoScreen(
             }
 
             Spacer(Modifier.height(16.dp))
-            InfoSection("基本信息") {
+            InfoSection("基本信息", Modifier.staggerIn(1)) {
                 InfoRow("文件路径", apk.path)
                 InfoRow("文件大小", "${FileItem.formatSize(apk.sizeBytes)} (${apk.sizeBytes} B)")
                 InfoRow("版本名称", apk.versionName)
@@ -155,14 +163,14 @@ fun ApkInfoScreen(
             }
 
             Spacer(Modifier.height(12.dp))
-            InfoSection("组件") {
+            InfoSection("组件", Modifier.staggerIn(2)) {
                 InfoRow("Activity 数量", apk.activityCount.toString())
                 InfoRow("Service 数量", apk.serviceCount.toString())
                 InfoRow("Receiver 数量", apk.receiverCount.toString())
             }
 
             Spacer(Modifier.height(12.dp))
-            InfoSection("签名") {
+            InfoSection("签名", Modifier.staggerIn(3)) {
                 InfoRow("SHA-256", apk.signatureSha256.ifBlank { "-" })
                 Spacer(Modifier.height(4.dp))
                 InfoRow("SHA-1", apk.signatureSha1.ifBlank { "-" })
@@ -172,7 +180,7 @@ fun ApkInfoScreen(
 
             if (apk.permissions.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
-                InfoSection("权限 (${apk.permissions.size})") {
+                InfoSection("权限 (${apk.permissions.size})", Modifier.staggerIn(4)) {
                     apk.permissions.forEach { perm ->
                         Text(
                             perm.removePrefix("android.permission."),
@@ -185,16 +193,18 @@ fun ApkInfoScreen(
 
             Spacer(Modifier.height(12.dp))
             val sdf = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()) }
-            InfoSection("时间") {
+            InfoSection("时间", Modifier.staggerIn(5)) {
                 if (apk.firstInstallTime > 0) InfoRow("首次安装", sdf.format(Date(apk.firstInstallTime)))
                 if (apk.lastUpdateTime > 0) InfoRow("最近更新", sdf.format(Date(apk.lastUpdateTime)))
             }
             Spacer(Modifier.height(24.dp))
         }
+        }
+        }
     }
 
     message?.let { msg ->
-        AlertDialog(
+        MAAlertDialog(
             onDismissRequest = { message = null },
             title = { Text("提示") },
             text = { Text(msg) },
@@ -204,8 +214,8 @@ fun ApkInfoScreen(
 }
 
 @Composable
-private fun InfoSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+private fun InfoSection(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Card(Modifier.fillMaxWidth().then(modifier)) {
         Column(Modifier.padding(12.dp)) {
             Text(
                 title,
@@ -243,9 +253,12 @@ fun ImageViewerScreen(
     var path by remember { mutableStateOf(initialPath ?: "") }
     var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var imgLoading by remember { mutableStateOf(initialPath?.isNotBlank() == true) }
 
     LaunchedEffect(path) {
         if (path.isBlank()) return@LaunchedEffect
+        imgLoading = true
+        error = null
         bitmap = withContext(Dispatchers.IO) {
             try {
                 android.graphics.BitmapFactory.decodeFile(path)
@@ -255,6 +268,7 @@ fun ImageViewerScreen(
             }
         }
         if (bitmap == null) error = "无法解码图片"
+        imgLoading = false
     }
 
     Scaffold(
@@ -275,15 +289,33 @@ fun ImageViewerScreen(
                 .padding(padding),
             contentAlignment = Alignment.Center
         ) {
-            when {
-                path.isBlank() -> Text("从文件列表选择图片文件打开", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                bitmap != null -> Image(
-                    bitmap = bitmap!!.asImageBitmap(),
-                    contentDescription = path,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit
-                )
-                else -> Text(error ?: "无法加载图片", color = MaterialTheme.colorScheme.error)
+            // 空 / 加载中 / 成功 / 失败：淡入淡出；图片解码完成后整体淡入
+            val phase = when {
+                path.isBlank() -> 0
+                imgLoading -> 1
+                bitmap != null -> 2
+                else -> 3
+            }
+            Crossfade(
+                targetState = phase,
+                animationSpec = tween(MAMotion.Long),
+                label = "imagePhase"
+            ) { ph ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    when (ph) {
+                        0 -> Text("从文件列表选择图片文件打开", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        1 -> CircularProgressIndicator()
+                        2 -> bitmap?.let { bmp ->
+                            Image(
+                                bitmap = bmp.asImageBitmap(),
+                                contentDescription = path,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                        else -> Text(error ?: "无法加载图片", color = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
         }
     }
@@ -347,26 +379,40 @@ fun HexViewerScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            when {
-                path.isBlank() -> Text(
-                    "在文件列表中长按选择文件后，通过更多菜单打开",
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                lines.isEmpty() -> Text(
-                    "无法读取文件内容",
-                    modifier = Modifier.align(Alignment.Center),
-                    color = MaterialTheme.colorScheme.error
-                )
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(lines.size) { i ->
-                        Text(
-                            lines[i],
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 1.dp)
+            val phase = when {
+                path.isBlank() -> 0
+                loading -> 1
+                lines.isEmpty() -> 2
+                else -> 3
+            }
+            Crossfade(
+                targetState = phase,
+                animationSpec = tween(MAMotion.Medium),
+                label = "hexPhase"
+            ) { ph ->
+                Box(Modifier.fillMaxSize()) {
+                    when (ph) {
+                        0 -> Text(
+                            "在文件列表中长按选择文件后，通过更多菜单打开",
+                            modifier = Modifier.align(Alignment.Center),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        1 -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                        2 -> Text(
+                            "无法读取文件内容",
+                            modifier = Modifier.align(Alignment.Center),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        else -> LazyColumn(Modifier.fillMaxSize()) {
+                            items(lines.size) { i ->
+                                Text(
+                                    lines[i],
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }

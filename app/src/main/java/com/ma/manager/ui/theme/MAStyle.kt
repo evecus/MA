@@ -1,9 +1,11 @@
 package com.ma.manager.ui.theme
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.background
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -126,27 +128,34 @@ fun ShadowToRight(modifier: Modifier = Modifier) {
  */
 @Composable
 fun DualPaneShadows(activeSide: PaneSide, modifier: Modifier = Modifier) {
-    // 切换活动窗口时三条阴影整体镜像，用短淡入淡出过渡，避免瞬切。
-    Crossfade(
-        targetState = activeSide,
-        animationSpec = tween(MAAnim.ShortMs),
-        label = "DualPaneShadows",
-        modifier = modifier.fillMaxSize()
-    ) { side ->
-        // The inactive pane is the one opposite to the active pane.
-        val inactiveIsLeft = side == PaneSide.RIGHT
+    // The inactive pane is the one opposite to the active pane.
+    val inactiveIsLeft = activeSide == PaneSide.RIGHT
 
-        Box(Modifier.fillMaxSize()) {
+    // 切换活动窗口时，两侧阴影交叉淡入淡出（而不是瞬间跳到另一侧）。
+    val leftAlpha by animateFloatAsState(
+        targetValue = if (inactiveIsLeft) 1f else 0f,
+        animationSpec = tween(MAMotion.Medium, easing = MAMotion.Standard),
+        label = "shadowLeft"
+    )
+    val rightAlpha by animateFloatAsState(
+        targetValue = if (inactiveIsLeft) 0f else 1f,
+        animationSpec = tween(MAMotion.Medium, easing = MAMotion.Standard),
+        label = "shadowRight"
+    )
+    val fadeLeft = Modifier.graphicsLayer { alpha = leftAlpha }
+    val fadeRight = Modifier.graphicsLayer { alpha = rightAlpha }
+
+    Box(modifier.fillMaxSize()) {
         // ---- centre divider: shadow into the inactive pane ----
         Row(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                if (inactiveIsLeft) {
-                    ShadowToLeft(Modifier.align(Alignment.CenterEnd))
+                if (leftAlpha > 0f) {
+                    ShadowToLeft(Modifier.align(Alignment.CenterEnd).then(fadeLeft))
                 }
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                if (!inactiveIsLeft) {
-                    ShadowToRight(Modifier.align(Alignment.CenterStart))
+                if (rightAlpha > 0f) {
+                    ShadowToRight(Modifier.align(Alignment.CenterStart).then(fadeRight))
                 }
             }
         }
@@ -159,10 +168,10 @@ fun DualPaneShadows(activeSide: PaneSide, modifier: Modifier = Modifier) {
                 .align(Alignment.TopStart)
         ) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                if (inactiveIsLeft) ShadowBelow()
+                if (leftAlpha > 0f) ShadowBelow(fadeLeft)
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                if (!inactiveIsLeft) ShadowBelow()
+                if (rightAlpha > 0f) ShadowBelow(fadeRight)
             }
         }
 
@@ -174,12 +183,11 @@ fun DualPaneShadows(activeSide: PaneSide, modifier: Modifier = Modifier) {
                 .align(Alignment.BottomStart)
         ) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                if (inactiveIsLeft) ShadowAbove()
+                if (leftAlpha > 0f) ShadowAbove(fadeLeft)
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
-                if (!inactiveIsLeft) ShadowAbove()
+                if (rightAlpha > 0f) ShadowAbove(fadeRight)
             }
         }
     }
-    }   // Crossfade content
 }

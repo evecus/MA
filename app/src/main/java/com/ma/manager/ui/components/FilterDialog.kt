@@ -1,5 +1,6 @@
 package com.ma.manager.ui.components
 
+import com.ma.manager.ui.theme.MAAlertDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -18,7 +19,7 @@ fun FilterDialog(
 ) {
     var query by remember { mutableStateOf(initialQuery ?: "") }
 
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("过滤") },
         text = {

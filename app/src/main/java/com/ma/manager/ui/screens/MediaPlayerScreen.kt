@@ -1,5 +1,17 @@
 package com.ma.manager.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.ma.manager.ui.theme.MAMotion
+import com.ma.manager.ui.theme.pressScale
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -265,11 +277,14 @@ fun MediaPlayerScreen(
             }
         )
 
-        if (error != null) {
+        AnimatedVisibility(
+            visible = error != null,
+            enter = fadeIn(tween(MAMotion.Medium)) + scaleIn(tween(MAMotion.Medium), initialScale = 0.92f),
+            exit = fadeOut(tween(MAMotion.Short)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
             Column(
-                Modifier
-                    .align(Alignment.Center)
-                    .padding(32.dp),
+                Modifier.padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(error ?: "", color = Color.White, fontSize = 15.sp, textAlign = TextAlign.Center)
@@ -288,8 +303,15 @@ fun MediaPlayerScreen(
         }
 
         // top bar follows the controller visibility for video
-        if (controlsVisible || error != null) {
-            topBar(Modifier.align(Alignment.TopStart))
+        AnimatedVisibility(
+            visible = controlsVisible || error != null,
+            enter = fadeIn(tween(MAMotion.Short)) +
+                slideInVertically(tween(MAMotion.Medium, easing = MAMotion.EmphasizedDecelerate)) { -it / 2 },
+            exit = fadeOut(tween(MAMotion.Short)) +
+                slideOutVertically(tween(MAMotion.Short, easing = MAMotion.EmphasizedAccelerate)) { -it / 2 },
+            modifier = Modifier.align(Alignment.TopStart)
+        ) {
+            topBar(Modifier)
         }
     }
 }
@@ -330,27 +352,32 @@ private fun AudioPlayerContent(
                 .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
-            if (cover != null) {
-                Image(
-                    bitmap = cover,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
-                )
+            // 切歌 / 封面解码完成后，封面淡入淡出
+            Crossfade(targetState = cover, animationSpec = tween(MAMotion.Long), label = "cover") { c ->
+                if (c != null) {
+                    Image(
+                        bitmap = c,
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
 
-        Text(
-            title,
-            color = Color.White,
-            fontSize = 18.sp,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-        )
+        Crossfade(targetState = title, animationSpec = tween(MAMotion.Medium), label = "audioTitle") { t ->
+            Text(
+                t,
+                color = Color.White,
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+            )
+        }
         Spacer(Modifier.height(12.dp))
 
         // progress bar
@@ -397,12 +424,17 @@ private fun AudioPlayerContent(
             IconButton(onClick = { exo.seekTo((exo.currentPosition - 5000).coerceAtLeast(0L)) }) {
                 SeekGlyph(label = "5", mirrored = false)
             }
+            val playSource = remember { MutableInteractionSource() }
             Box(
                 Modifier
                     .size(64.dp)
+                    .pressScale(playSource, 0.86f)
                     .clip(CircleShape)
                     .background(Color.White)
-                    .clickable {
+                    .clickable(
+                        interactionSource = playSource,
+                        indication = LocalIndication.current
+                    ) {
                         if (exo.isPlaying) {
                             exo.pause()
                         } else {
@@ -412,12 +444,19 @@ private fun AudioPlayerContent(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (playing) "暂停" else "播放",
-                    tint = Color.Black,
-                    modifier = Modifier.size(40.dp)
-                )
+                // 播放 ⇄ 暂停：图标旋转缩放交叉淡入
+                Crossfade(
+                    targetState = playing,
+                    animationSpec = tween(MAMotion.Short),
+                    label = "playPause"
+                ) { isPlaying ->
+                    Icon(
+                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "暂停" else "播放",
+                        tint = Color.Black,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
             }
             IconButton(onClick = {
                 val target = exo.currentPosition + 15000

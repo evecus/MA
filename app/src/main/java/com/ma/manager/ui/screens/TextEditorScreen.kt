@@ -1,5 +1,19 @@
 package com.ma.manager.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.ma.manager.ui.theme.MAMotion
+import com.ma.manager.ui.theme.pressClickable
+import com.ma.manager.ui.theme.pressScale
+import com.ma.manager.ui.theme.MAAlertDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -512,7 +526,11 @@ fun TextEditorScreen(
                             modifier = Modifier.clickable { showCharset = true }.padding(horizontal = 4.dp)
                         )
                     }
-                    if (showFind) {
+                    AnimatedVisibility(
+                        visible = showFind,
+                        enter = expandVertically(tween(MAMotion.Medium, easing = MAMotion.Standard)) + fadeIn(tween(MAMotion.Short)),
+                        exit = shrinkVertically(tween(MAMotion.Short, easing = MAMotion.Standard)) + fadeOut(tween(MAMotion.Fast))
+                    ) {
                         FindReplaceBar(
                             findText = findText,
                             onFindChange = { findText = it; matchIndex = 0 },
@@ -569,7 +587,7 @@ fun TextEditorScreen(
                             sym,
                             style = monoStyle.copy(fontSize = 17.sp),
                             modifier = Modifier
-                                .clickable { insertSymbol(sym) }
+                                .pressClickable(pressedScale = 0.78f) { insertSymbol(sym) }
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         )
                     }
@@ -739,14 +757,24 @@ fun TextEditorScreen(
             }
             }
 
-            statusMsg?.let { msg ->
+            // 状态提示：从底部滑入、淡入；消失时完整滑出（保留最后一条文字）
+            val shownMsg = statusMsg
+            val lastStatus = remember { arrayOf("") }
+            if (shownMsg != null) lastStatus[0] = shownMsg
+            AnimatedVisibility(
+                visible = shownMsg != null,
+                enter = slideInVertically(tween(MAMotion.Medium, easing = MAMotion.EmphasizedDecelerate)) { it } +
+                    fadeIn(tween(MAMotion.Short)),
+                exit = slideOutVertically(tween(MAMotion.Short, easing = MAMotion.EmphasizedAccelerate)) { it } +
+                    fadeOut(tween(MAMotion.Short)),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)
+            ) {
                 Surface(
                     color = MaterialTheme.colorScheme.inverseSurface,
-                    shape = MaterialTheme.shapes.small,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)
+                    shape = MaterialTheme.shapes.small
                 ) {
                     Text(
-                        msg,
+                        shownMsg ?: lastStatus[0],
                         color = MaterialTheme.colorScheme.inverseOnSurface,
                         fontSize = 11.sp,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -759,7 +787,7 @@ fun TextEditorScreen(
     // ------------------------------------------------------------- dialogs
 
     if (showGoto) {
-        AlertDialog(
+        MAAlertDialog(
             onDismissRequest = { showGoto = false },
             title = { Text("转到指定行") },
             text = {
@@ -796,7 +824,7 @@ fun TextEditorScreen(
             "Windows-1252" to Charset.forName("windows-1252"),
             "US-ASCII" to StandardCharsets.US_ASCII
         )
-        AlertDialog(
+        MAAlertDialog(
             onDismissRequest = { showCharset = false },
             title = { Text("字符编码") },
             text = {
@@ -839,7 +867,7 @@ fun TextEditorScreen(
     }
 
     if (showLang) {
-        AlertDialog(
+        MAAlertDialog(
             onDismissRequest = { showLang = false },
             title = { Text("语法高亮") },
             text = {
@@ -877,7 +905,7 @@ fun TextEditorScreen(
     }
 
     if (showCloseConfirm) {
-        AlertDialog(
+        MAAlertDialog(
             onDismissRequest = { showCloseConfirm = false },
             title = { Text("文件已修改") },
             text = { Text("是否保存对 $fileName 的更改？") },
@@ -913,11 +941,23 @@ private fun EditorBarIcon(
     rotation: Float = 0f,
     onClick: () -> Unit
 ) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp)) {
+    val source = remember { MutableInteractionSource() }
+    // 启用 / 禁用（撤销、重做等）时图标颜色渐变；按下时缩放回弹
+    val tint by animateColorAsState(
+        if (enabled) Color.White else Color(0xFF757575),
+        tween(MAMotion.Short),
+        label = "barIconTint"
+    )
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        interactionSource = source,
+        modifier = Modifier.size(40.dp).pressScale(source, 0.8f)
+    ) {
         Icon(
             icon,
             contentDescription = desc,
-            tint = if (enabled) Color.White else Color(0xFF757575),
+            tint = tint,
             modifier = Modifier
                 .size(20.dp)
                 .then(if (rotation != 0f) Modifier.rotate(rotation) else Modifier)

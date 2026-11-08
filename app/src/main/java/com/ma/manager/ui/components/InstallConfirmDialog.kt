@@ -1,5 +1,9 @@
 package com.ma.manager.ui.components
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import com.ma.manager.ui.theme.MAMotion
+import com.ma.manager.ui.theme.MAAlertDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -31,11 +35,11 @@ fun InstallConfirmDialog(
     val warning = ApkInfoUtil.installWarning(parsed)
     val isInstalled = parsed?.isInstalled == true
 
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (isInstalled) "是否覆盖安装？" else "安装 APK") },
         text = {
-            Column {
+            Column(Modifier.animateContentSize(tween(MAMotion.Medium, easing = MAMotion.Standard))) {
                 if (parsed == null) {
                     Text(
                         text = "${item.name}\n将使用系统安装器安装该安装包。",

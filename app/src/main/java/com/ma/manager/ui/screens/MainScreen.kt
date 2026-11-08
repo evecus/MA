@@ -2,6 +2,21 @@ package com.ma.manager.ui.screens
 
 import androidx.activity.compose.BackHandler
 import android.app.Activity
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.graphics.graphicsLayer
+import com.ma.manager.ui.theme.MAAlertDialog
+import com.ma.manager.ui.theme.MAMotion
+import com.ma.manager.ui.theme.OverlayHost
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -29,12 +44,9 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.ma.manager.ui.theme.DualPaneShadows
-import com.ma.manager.ui.theme.MAAnim
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -113,151 +125,56 @@ fun MainScreen(
         }
     }
 
-    // 统一页面切换动画：原先 12 处 `return` 会瞬间替换整棵内容树，
-    // 现在收敛为一个 AnimatedContent，screenKey 变化即触发进出过渡。
-    // 所有 remember 状态与 BackHandler 留在容器外层，避免过渡期间
-    // 旧 content 被 dispose 时丢状态（尤其 currentTool 自身）。
-    // currentTool 是 by remember 委托属性，无法智能转换；先捕获到局部 val，
-    // 才能安全地用于 Set<ToolAction> 的包含判断与字符串插值。
-    val activeTool: ToolAction? = currentTool
-    val screenKey: String = when {
-        activeTool != null && activeTool !in DIALOG_ONLY_TOOLS -> "tool:$activeTool"
-        viewModel.imageViewerPath != null -> "image"
-        viewModel.hexViewerPath != null -> "hex"
-        viewModel.mediaPlaylist != null -> "media"
-        viewModel.showTextEditor -> "editor"
-        else -> MAAnim.SCREEN_LIST
-    }
-
-    AnimatedContent(
-        targetState = screenKey,
-        transitionSpec = { MAAnim.screenTransform(screenKey != MAAnim.SCREEN_LIST) },
-        label = "MainScreen"
-    ) { key ->
-    // 过渡期间旧 content 仍会重组：必须用传入的 key 快照分发，
-    // 不能直接读外层可变的 currentTool，否则旧页面会瞬间变成新页面。
-    val toolForKey: ToolAction? = if (key.startsWith("tool:")) {
-        runCatching { ToolAction.valueOf(key.removePrefix("tool:")) }.getOrNull()
-    } else null
-
-    // ---- full-screen pages ----
-    when (toolForKey) {
-        ToolAction.TERMINAL -> {
-            TerminalScreen(onClose = { currentTool = null })
-            return@AnimatedContent
-        }
-        ToolAction.SETTINGS -> {
-            SettingsScreen(onClose = { currentTool = null })
-            return@AnimatedContent
-        }
-        ToolAction.BOOKMARKS -> {
-            BookmarksScreen(
-                bookmarks = viewModel.bookmarkList,
-                onOpen = { viewModel.navigateTo(active, it) },
-                onRemove = { viewModel.removeBookmark(it) },
-                onClose = { currentTool = null }
-            )
-            return@AnimatedContent
-        }
-        ToolAction.TRASH -> {
-            TrashScreen(
-                onClose = { currentTool = null },
-                onEmpty = { viewModel.emptyTrash() }
-            )
-            return@AnimatedContent
-        }
-        ToolAction.TEXT_EDITOR -> {
-            TextEditorScreen(
-                path = "/storage/emulated/0/MA-note.txt",
-                initialContent = "",
-                onSave = { content, _ ->
-                    viewModel.textEditorPath = "/storage/emulated/0/MA-note.txt"
-                    viewModel.saveTextEditor(content)
-                    currentTool = null
+    // ---- 占位类工具：用对话框提示 ----
+    when (currentTool) {
+        ToolAction.PLUGINS,
+        ToolAction.REMOTE,
+        ToolAction.COLOR_PICKER,
+        ToolAction.FTP,
+        ToolAction.ACTIVITY_LOG -> {
+            MAAlertDialog(
+                onDismissRequest = { currentTool = null },
+                title = { Text("功能开发中") },
+                text = {
+                    Text(
+                        when (currentTool) {
+                            ToolAction.PLUGINS -> "插件管理：后续支持自定义脚本与翻译引擎。"
+                            ToolAction.REMOTE -> "远程管理：HTTP/FTP 服务即将加入。"
+                            ToolAction.COLOR_PICKER -> "屏幕取色：需要悬浮窗权限，后续实现。"
+                            ToolAction.FTP -> "FTP 客户端：连接远程服务器浏览文件。"
+                            ToolAction.ACTIVITY_LOG -> "Activity 记录：查看最近打开的路径与操作。"
+                            else -> "敬请期待"
+                        }
+                    )
                 },
-                onClose = { currentTool = null }
+                confirmButton = {
+                    TextButton(onClick = { currentTool = null }) { Text("确定") }
+                }
             )
-            return@AnimatedContent
-        }
-        ToolAction.APK_EXTRACT -> {
-            ApkExtractorScreen(onClose = { currentTool = null })
-            return@AnimatedContent
-        }
-        ToolAction.APK_INFO -> {
-            val p = fullApkPath
-                ?: viewModel.propertiesItem?.path
-                ?: activeState.items.firstOrNull { it.path in activeState.selectedItems && !it.isDirectory }?.path
-                ?: activeState.currentPath
-            ApkInfoScreen(apkPath = p, onClose = { currentTool = null })
-            return@AnimatedContent
-        }
-        ToolAction.IMAGE_VIEWER -> {
-            ImageViewerScreen(
-                initialPath = activeState.items.firstOrNull { it.path in activeState.selectedItems && !it.isDirectory }?.path,
-                onClose = { currentTool = null }
-            )
-            return@AnimatedContent
-        }
-        ToolAction.HEX_VIEWER -> {
-            HexViewerScreen(
-                initialPath = activeState.items.firstOrNull { it.path in activeState.selectedItems && !it.isDirectory }?.path,
-                onClose = { currentTool = null }
-            )
-            return@AnimatedContent
         }
         else -> {}
     }
 
-    // 这 5 项只是叠在文件列表上的「功能开发中」提示，不是全屏页面：
-    // 不参与 screenKey（不触发页面转场），仅用 Material3 AlertDialog 自带淡入。
-    if (activeTool != null && activeTool in DIALOG_ONLY_TOOLS) {
-        AlertDialog(
-            onDismissRequest = { currentTool = null },
-            title = { Text("功能开发中") },
-            text = {
-                Text(
-                    when (activeTool) {
-                        ToolAction.PLUGINS -> "插件管理：后续支持自定义脚本与翻译引擎。"
-                        ToolAction.REMOTE -> "远程管理：HTTP/FTP 服务即将加入。"
-                        ToolAction.COLOR_PICKER -> "屏幕取色：需要悬浮窗权限，后续实现。"
-                        ToolAction.FTP -> "FTP 客户端：连接远程服务器浏览文件。"
-                        ToolAction.ACTIVITY_LOG -> "Activity 记录：查看最近打开的路径与操作。"
-                        else -> "敬请期待"
-                    }
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { currentTool = null }) { Text("确定") }
-            }
-        )
+    // ---- 全屏页面：不再用 return 硬切，而是作为覆盖层滑入 / 滑出 ----
+    // 优先级与原来的 early-return 顺序一致：工具页 > 图片 > Hex > 播放器 > 文本编辑器
+    val toolPage = currentTool?.takeIf { it !in DIALOG_TOOLS }
+    val imagePath = viewModel.imageViewerPath
+    val hexPath = viewModel.hexViewerPath
+    val playlist = viewModel.mediaPlaylist
+    val overlay: Overlay? = when {
+        toolPage != null -> Overlay.Tool(toolPage)
+        imagePath != null -> Overlay.Image(imagePath)
+        hexPath != null -> Overlay.Hex(hexPath)
+        playlist != null -> Overlay.Media(playlist)
+        viewModel.showTextEditor -> Overlay.Editor
+        else -> null
     }
-
-    // ---- full-screen viewers (click dispatch targets) ----
-    // 按 key 快照分发：过渡期间旧 content 仍会重组，若直接读 viewModel 的
-    // 可变 path，退出动画会闪成列表/空白。remember(key) 把参数冻结在进页那一刻。
-    if (key == "image") {
-        val path = remember(key) { viewModel.imageViewerPath }
-        ImageViewerScreen(initialPath = path, onClose = { viewModel.dismissImageViewer() })
-        return@AnimatedContent
-    }
-    if (key == "hex") {
-        val path = remember(key) { viewModel.hexViewerPath }
-        HexViewerScreen(initialPath = path, onClose = { viewModel.dismissHexViewer() })
-        return@AnimatedContent
-    }
-    if (key == "media") {
-        val paths = remember(key) { viewModel.mediaPlaylist.orEmpty() }
-        MediaPlayerScreen(
-            paths = paths,
-            startIndex = viewModel.mediaStartIndex,
-            onClose = { viewModel.dismissMediaPlayer() },
-            onOpenSystem = { path ->
-                viewModel.dismissMediaPlayer()
-                viewModel.openWithSystem(FileItem.fromFile(java.io.File(path)))
-            }
-        )
-        return@AnimatedContent
-    }
+    // 覆盖层出现时，下面的主界面轻微左移并压暗（视差），退出时恢复
+    val overlayProgress by animateFloatAsState(
+        targetValue = if (overlay != null) 1f else 0f,
+        animationSpec = tween(MAMotion.Long - 30, easing = MAMotion.Standard),
+        label = "overlayProgress"
+    )
 
     // Long-press menu content shared by both panes (single vs batch).
     val paneMenu: @Composable (PaneSide, FileItem) -> Unit = { side, item ->
@@ -320,6 +237,12 @@ fun MainScreen(
         )
     }
 
+    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer { translationX = -size.width * 0.16f * overlayProgress }
+    ) {
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -335,6 +258,7 @@ fun MainScreen(
                     onBookmarkRemove = { viewModel.removeBookmark(it) },
                     onBookmarkAdd = { viewModel.showBookmarkAddDialog = true },
                     onClose = { scope.launch { drawerState.close() } },
+                    isOpen = drawerState.targetValue == DrawerValue.Open,
                     onRequestRoot = {
                         scope.launch {
                             val isRoot = withContext(Dispatchers.IO) {
@@ -365,14 +289,40 @@ fun MainScreen(
                     onNavigationClick = { scope.launch { drawerState.open() } },
                     onTitleClick = { viewModel.showJumpDialog = true },
                     actions = {
-                        if (activeState.inSelectionMode) {
-                            Text(
-                                "已选 ${activeState.selectedItems.size}",
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(end = 8.dp)
-                            )
-                            IconButton(onClick = { viewModel.clearSelection(active) }) {
-                                Icon(Icons.Default.Close, contentDescription = "取消选择")
+                        // 进入 / 退出多选：计数与关闭按钮横向展开 + 淡入；数字变化时上下滚动
+                        val selCount = activeState.selectedItems.size
+                        val lastSel = remember { arrayOf(0) }
+                        if (selCount > 0) lastSel[0] = selCount
+                        AnimatedVisibility(
+                            visible = activeState.inSelectionMode,
+                            enter = fadeIn(tween(MAMotion.Short)) +
+                                expandHorizontally(tween(MAMotion.Short, easing = MAMotion.Standard)),
+                            exit = fadeOut(tween(MAMotion.Fast)) +
+                                shrinkHorizontally(tween(MAMotion.Short, easing = MAMotion.Standard))
+                        ) {
+                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                AnimatedContent(
+                                    targetState = if (selCount > 0) selCount else lastSel[0],
+                                    transitionSpec = {
+                                        if (targetState > initialState) {
+                                            (slideInVertically(tween(MAMotion.Short)) { it / 2 } + fadeIn(tween(MAMotion.Short))) togetherWith
+                                                (slideOutVertically(tween(MAMotion.Short)) { -it / 2 } + fadeOut(tween(MAMotion.Fast)))
+                                        } else {
+                                            (slideInVertically(tween(MAMotion.Short)) { -it / 2 } + fadeIn(tween(MAMotion.Short))) togetherWith
+                                                (slideOutVertically(tween(MAMotion.Short)) { it / 2 } + fadeOut(tween(MAMotion.Fast)))
+                                        }
+                                    },
+                                    label = "selCount"
+                                ) { n ->
+                                    Text(
+                                        "已选 $n",
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                }
+                                IconButton(onClick = { viewModel.clearSelection(active) }) {
+                                    Icon(Icons.Default.Close, contentDescription = "取消选择")
+                                }
                             }
                         }
                         Box {
@@ -466,21 +416,29 @@ fun MainScreen(
                 )
             },
             snackbarHost = {
+                // 退出动画期间 snackMsg 已为 null，保留最后一条文字让它完整滑出
+                val shown = snackMsg
+                val lastMsg = remember { arrayOf("") }
+                if (shown != null) lastMsg[0] = shown
                 AnimatedVisibility(
-                    visible = snackMsg != null,
-                    enter = MAAnim.ToastEnter,
-                    exit = MAAnim.ToastExit
+                    visible = shown != null,
+                    enter = slideInVertically(
+                        tween(MAMotion.Medium, easing = MAMotion.EmphasizedDecelerate)
+                    ) { it } + fadeIn(tween(MAMotion.Short)),
+                    exit = slideOutVertically(
+                        tween(MAMotion.Short, easing = MAMotion.EmphasizedAccelerate)
+                    ) { it } + fadeOut(tween(MAMotion.Short))
                 ) {
-                    snackMsg?.let { msg ->
-                        Snackbar(
-                            action = {
-                                TextButton(onClick = { snackMsg = null }) { Text("关闭") }
-                            }
-                        ) { Text(msg) }
-                        LaunchedEffect(msg) {
-                            kotlinx.coroutines.delay(2500)
-                            snackMsg = null
+                    Snackbar(
+                        action = {
+                            TextButton(onClick = { snackMsg = null }) { Text("关闭") }
                         }
+                    ) { Text(shown ?: lastMsg[0]) }
+                }
+                LaunchedEffect(shown) {
+                    if (shown != null) {
+                        kotlinx.coroutines.delay(2500)
+                        snackMsg = null
                     }
                 }
             }
@@ -538,6 +496,58 @@ fun MainScreen(
                 )
             }
         }
+    }
+    }
+
+    // 压暗层：不拦截触摸（没有 pointerInput），触摸由上面的覆盖层页面自己消费
+    if (overlayProgress > 0.001f) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.32f * overlayProgress))
+        )
+    }
+
+    OverlayHost(overlay) { ov ->
+        when (ov) {
+            is Overlay.Tool -> ToolPage(
+                action = ov.action,
+                viewModel = viewModel,
+                activeItems = activeState.items,
+                activeSelected = activeState.selectedItems,
+                activePath = activeState.currentPath,
+                fullApkPath = fullApkPath,
+                onClose = { currentTool = null }
+            )
+            is Overlay.Image -> ImageViewerScreen(
+                initialPath = ov.path,
+                onClose = { viewModel.dismissImageViewer() }
+            )
+            is Overlay.Hex -> HexViewerScreen(
+                initialPath = ov.path,
+                onClose = { viewModel.dismissHexViewer() }
+            )
+            is Overlay.Media -> MediaPlayerScreen(
+                paths = ov.paths,
+                startIndex = viewModel.mediaStartIndex,
+                onClose = { viewModel.dismissMediaPlayer() },
+                onOpenSystem = { path ->
+                    viewModel.dismissMediaPlayer()
+                    viewModel.openWithSystem(FileItem.fromFile(java.io.File(path)))
+                }
+            )
+            Overlay.Editor -> TextEditorScreen(
+                path = viewModel.textEditorPath,
+                initialContent = viewModel.textEditorContent,
+                readOnly = viewModel.textEditorReadOnly,
+                wrap = false,
+                charset = viewModel.textEditorCharset,
+                fileBytes = viewModel.textEditorBytes,
+                onSave = { content, cs -> viewModel.saveTextEditor(content, cs) },
+                onClose = { viewModel.showTextEditor = false }
+            )
+        }
+    }
     }
 
     // ------------------------------------------------------------- dialogs
@@ -776,28 +786,8 @@ fun MainScreen(
             onDismiss = { viewModel.dismissProgress() }
         )
     }
-
-        if (key == "editor") {
-            TextEditorScreen(
-                path = viewModel.textEditorPath,
-                initialContent = viewModel.textEditorContent,
-                readOnly = viewModel.textEditorReadOnly,
-                wrap = false,
-                charset = viewModel.textEditorCharset,
-                fileBytes = viewModel.textEditorBytes,
-                onSave = { content, cs -> viewModel.saveTextEditor(content, cs) },
-                onClose = { viewModel.showTextEditor = false }
-            )
-        }
-    }   // AnimatedContent content lambda
 }
 
-
-/** 只在文件列表上弹提示框、不切换全屏页面的 tool（不参与页面转场动画）。 */
-private val DIALOG_ONLY_TOOLS = setOf(
-    ToolAction.PLUGINS, ToolAction.REMOTE, ToolAction.COLOR_PICKER,
-    ToolAction.FTP, ToolAction.ACTIVITY_LOG
-)
 
 /** True when "back" should still walk up the directory tree (stops at / and the storage root). */
 private fun canGoUp(path: String): Boolean {
@@ -821,3 +811,71 @@ private fun Modifier.activateOnTouch(onTouch: () -> Unit): Modifier =
             }
         }
     }
+
+
+/** 以对话框形式提示「开发中」的占位工具，不是全屏页。 */
+private val DIALOG_TOOLS = setOf(
+    ToolAction.PLUGINS,
+    ToolAction.REMOTE,
+    ToolAction.COLOR_PICKER,
+    ToolAction.FTP,
+    ToolAction.ACTIVITY_LOG
+)
+
+/** 当前显示在主界面之上的全屏页（用作转场的 key，相同 key 不会重复播放转场）。 */
+private sealed interface Overlay {
+    data class Tool(val action: ToolAction) : Overlay
+    data class Image(val path: String) : Overlay
+    data class Hex(val path: String) : Overlay
+    data class Media(val paths: List<String>) : Overlay
+    data object Editor : Overlay
+}
+
+@Composable
+private fun ToolPage(
+    action: ToolAction,
+    viewModel: FileManagerViewModel,
+    activeItems: List<FileItem>,
+    activeSelected: Set<String>,
+    activePath: String,
+    fullApkPath: String?,
+    onClose: () -> Unit
+) {
+    val firstSelectedFile = activeItems
+        .firstOrNull { it.path in activeSelected && !it.isDirectory }?.path
+    when (action) {
+        ToolAction.TERMINAL -> TerminalScreen(onClose = onClose)
+        ToolAction.SETTINGS -> SettingsScreen(onClose = onClose)
+        ToolAction.BOOKMARKS -> BookmarksScreen(
+            bookmarks = viewModel.bookmarkList,
+            onOpen = { viewModel.navigateTo(viewModel.activePane, it) },
+            onRemove = { viewModel.removeBookmark(it) },
+            onClose = onClose
+        )
+        ToolAction.TRASH -> TrashScreen(
+            onClose = onClose,
+            onEmpty = { viewModel.emptyTrash() }
+        )
+        ToolAction.TEXT_EDITOR -> TextEditorScreen(
+            path = "/storage/emulated/0/MA-note.txt",
+            initialContent = "",
+            onSave = { content, _ ->
+                viewModel.textEditorPath = "/storage/emulated/0/MA-note.txt"
+                viewModel.saveTextEditor(content)
+                onClose()
+            },
+            onClose = onClose
+        )
+        ToolAction.APK_EXTRACT -> ApkExtractorScreen(onClose = onClose)
+        ToolAction.APK_INFO -> {
+            val p = fullApkPath
+                ?: viewModel.propertiesItem?.path
+                ?: firstSelectedFile
+                ?: activePath
+            ApkInfoScreen(apkPath = p, onClose = onClose)
+        }
+        ToolAction.IMAGE_VIEWER -> ImageViewerScreen(initialPath = firstSelectedFile, onClose = onClose)
+        ToolAction.HEX_VIEWER -> HexViewerScreen(initialPath = firstSelectedFile, onClose = onClose)
+        else -> {}
+    }
+}

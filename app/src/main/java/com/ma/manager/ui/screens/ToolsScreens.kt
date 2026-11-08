@@ -1,5 +1,14 @@
 package com.ma.manager.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import com.ma.manager.ui.theme.MAMotion
+import com.ma.manager.ui.theme.MAAlertDialog
 import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -116,18 +125,24 @@ fun TerminalScreen(onClose: () -> Unit) {
                     Icon(Icons.Default.PlayArrow, contentDescription = "执行")
                 }
             }
-            // History quick bar
-            if (history.isNotEmpty()) {
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.horizontalScroll(rememberScrollState())
-                ) {
-                    history.takeLast(10).reversed().forEach { cmd ->
-                        AssistChip(
-                            onClick = { input = cmd },
-                            label = { Text(cmd, fontSize = 10.sp, maxLines = 1) }
-                        )
+            // History quick bar：第一次执行命令后，快捷历史条展开出现
+            AnimatedVisibility(
+                visible = history.isNotEmpty(),
+                enter = expandVertically(tween(MAMotion.Medium, easing = MAMotion.Standard)) + fadeIn(tween(MAMotion.Short)),
+                exit = shrinkVertically(tween(MAMotion.Short)) + fadeOut(tween(MAMotion.Fast))
+            ) {
+                Column {
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
+                        history.takeLast(10).reversed().forEach { cmd ->
+                            AssistChip(
+                                onClick = { input = cmd },
+                                label = { Text(cmd, fontSize = 10.sp, maxLines = 1) }
+                            )
+                        }
                     }
                 }
             }
@@ -211,7 +226,12 @@ fun ApkExtractorScreen(onClose: () -> Unit) {
                 Spacer(Modifier.weight(1f))
                 Text("${filtered.size} 个应用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (loading) {
+            Crossfade(
+                targetState = loading,
+                animationSpec = tween(MAMotion.Medium),
+                label = "apkLoading"
+            ) { isLoading ->
+            if (isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
@@ -266,16 +286,17 @@ fun ApkExtractorScreen(onClose: () -> Unit) {
                                     }
                                 }
                             },
-                            modifier = Modifier.clickable { }
+                            modifier = Modifier.animateItem().clickable { }
                         )
                         HorizontalDivider()
                     }
                 }
             }
+            }
         }
 
         message?.let { msg ->
-            AlertDialog(
+            MAAlertDialog(
                 onDismissRequest = { message = null },
                 title = { Text("提示") },
                 text = { Text(msg) },
@@ -308,7 +329,12 @@ fun BookmarksScreen(
             )
         }
     ) { padding ->
-        if (bookmarks.isEmpty()) {
+        Crossfade(
+            targetState = bookmarks.isEmpty(),
+            animationSpec = tween(MAMotion.Medium),
+            label = "bookmarksEmpty"
+        ) { empty ->
+        if (empty) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -335,7 +361,7 @@ fun BookmarksScreen(
                                 )
                             }
                         },
-                        modifier = Modifier.clickable {
+                        modifier = Modifier.animateItem().clickable {
                             onOpen(bm.path)
                             onClose()
                         }
@@ -343,6 +369,7 @@ fun BookmarksScreen(
                     HorizontalDivider()
                 }
             }
+        }
         }
     }
 }
@@ -382,11 +409,22 @@ fun TrashScreen(
             )
         }
     ) { padding ->
-        if (loading) {
+        // 加载中 / 空 / 列表 三态淡入淡出切换
+        val phase = when {
+            loading -> 0
+            items.none { it.name != ".." } -> 1
+            else -> 2
+        }
+        Crossfade(
+            targetState = phase,
+            animationSpec = tween(MAMotion.Medium),
+            label = "trashPhase"
+        ) { ph ->
+        if (ph == 0) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        } else if (items.none { it.name != ".." }) {
+        } else if (ph == 1) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -405,16 +443,18 @@ fun TrashScreen(
                                 if (item.isDirectory) "文件夹" else com.ma.manager.data.FileItem.formatSize(item.size),
                                 fontSize = 12.sp
                             )
-                        }
+                        },
+                        modifier = Modifier.animateItem()
                     )
                     HorizontalDivider()
                 }
             }
         }
+        }
     }
 
     if (confirmEmpty) {
-        AlertDialog(
+        MAAlertDialog(
             onDismissRequest = { confirmEmpty = false },
             title = { Text("清空回收站") },
             text = { Text("确定要永久删除回收站中的所有文件吗？此操作不可恢复。") },

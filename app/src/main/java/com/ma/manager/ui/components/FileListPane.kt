@@ -1,8 +1,19 @@
 package com.ma.manager.ui.components
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import com.ma.manager.ui.theme.MAMotion
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,7 +22,6 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import com.ma.manager.ui.theme.MAAnim
 import com.ma.manager.ui.theme.MAStyle
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -41,6 +51,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
@@ -84,8 +96,57 @@ fun FileListPane(
         if (idx >= 0) runCatching { listState.animateScrollToItem(idx) }
     }
 
+    // ---- 加载态判定 -------------------------------------------------------------
+    // 「同一目录刷新」时保留旧列表（不闪烁）；只有真的切换了目录才进入加载态。
+    val loadedPath = remember { arrayOfNulls<String>(1) }
+    SideEffect { if (!state.isLoading) loadedPath[0] = state.currentPath }
+    val navigating = state.isLoading && loadedPath[0] != state.currentPath
+    val showEmpty = !navigating && visible.isEmpty()
+    val showList = !navigating && visible.isNotEmpty()
+
+    // 加载转圈延迟 150ms 才出现，本地目录秒开时完全不会闪。
+    var spinnerReady by remember { mutableStateOf(false) }
+    LaunchedEffect(navigating) {
+        spinnerReady = false
+        if (navigating) {
+            kotlinx.coroutines.delay(150)
+            spinnerReady = true
+        }
+    }
+
+    // ---- 目录切换：进入子目录从右滑入，返回上级从左滑入，其它情况淡入 ----------------
+    val path = state.currentPath
+    val prevPath = remember { arrayOf(path) }
+    val direction = remember(path) {
+        val old = prevPath[0]
+        when {
+            old == path -> 0
+            path.trimEnd('/').startsWith(old.trimEnd('/') + "/") || old == "/" -> 1
+            old.trimEnd('/').startsWith(path.trimEnd('/') + "/") || path == "/" -> -1
+            else -> 0
+        }
+    }
+    SideEffect { prevPath[0] = path }
+    val enter = remember(path) { Animatable(0f) }
+    LaunchedEffect(path, showList, showEmpty) {
+        if (showList || showEmpty) {
+            enter.animateTo(1f, tween(MAMotion.Medium, easing = MAMotion.EmphasizedDecelerate))
+        }
+    }
+    val slidePx = with(LocalDensity.current) { 36.dp.toPx() }
+
+    // 搜索 / 过滤条退出动画期间，query 已变为 null，用这里保存的最后一次文字继续显示
+    val lastQuery = remember { arrayOf("", "") }
+    state.searchQuery?.let { lastQuery[0] = it }
+    state.filterQuery?.let { lastQuery[1] = it }
+
     Column(modifier = modifier.fillMaxHeight().background(MAStyle.listBg())) {
-        state.searchQuery?.let { q ->
+        AnimatedVisibility(
+            visible = state.searchQuery != null,
+            enter = expandVertically(tween(MAMotion.Short)) + fadeIn(tween(MAMotion.Short)),
+            exit = shrinkVertically(tween(MAMotion.Short)) + fadeOut(tween(MAMotion.Fast))
+        ) {
+            val q = state.searchQuery ?: lastQuery[0]
             Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
                 Row(
                     Modifier
@@ -104,7 +165,12 @@ fun FileListPane(
             }
         }
 
-        state.filterQuery?.let { q ->
+        AnimatedVisibility(
+            visible = state.filterQuery != null,
+            enter = expandVertically(tween(MAMotion.Short)) + fadeIn(tween(MAMotion.Short)),
+            exit = shrinkVertically(tween(MAMotion.Short)) + fadeOut(tween(MAMotion.Fast))
+        ) {
+            val q = state.filterQuery ?: lastQuery[1]
             Surface(color = MaterialTheme.colorScheme.tertiaryContainer) {
                 Row(
                     Modifier
@@ -123,12 +189,24 @@ fun FileListPane(
             }
         }
 
-        if (state.isLoading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize()) {
+            // ---- 加载中 ----
+            AnimatedVisibility(
+                visible = navigating && spinnerReady,
+                enter = fadeIn(tween(MAMotion.Short)),
+                exit = fadeOut(tween(MAMotion.Fast)),
+                modifier = Modifier.align(Alignment.Center)
+            ) {
                 androidx.compose.material3.CircularProgressIndicator()
             }
-        } else if (visible.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+
+            // ---- 空目录 / 无结果 ----
+            AnimatedVisibility(
+                visible = showEmpty,
+                enter = fadeIn(tween(MAMotion.Medium)) + scaleIn(tween(MAMotion.Medium), initialScale = 0.9f),
+                exit = fadeOut(tween(MAMotion.Fast)),
+                modifier = Modifier.align(Alignment.Center)
+            ) {
                 Text(
                     if (state.searchQuery != null) "无匹配结果"
                     else if (state.filterQuery != null) "无匹配文件"
@@ -137,24 +215,35 @@ fun FileListPane(
                     fontSize = 13.sp
                 )
             }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(0.dp)
-            ) {
-                items(visible, key = { it.path }) { item ->
-                    FileListItem(
-                        item = item,
-                        isSelected = item.path in state.selectedItems,
-                        isHighlighted = item.path == state.highlightPath,
-                        onClick = { onItemClick(item) },
-                        onLongClick = { onItemLongClick(item) },
-                        onSwipeSelect = { onSwipeSelect(item) },
-                        menu = if (item == longPressItem) {
-                            { menuContent(item) }
-                        } else null
-                    )
+
+            // ---- 列表 ----
+            if (showList) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val p = enter.value
+                            alpha = 0.25f + 0.75f * p
+                            translationX = direction * slidePx * (1f - p)
+                        },
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    items(visible, key = { it.path }) { item ->
+                        FileListItem(
+                            item = item,
+                            isSelected = item.path in state.selectedItems,
+                            isHighlighted = item.path == state.highlightPath,
+                            onClick = { onItemClick(item) },
+                            onLongClick = { onItemLongClick(item) },
+                            onSwipeSelect = { onSwipeSelect(item) },
+                            // 删除 / 重命名 / 排序后，条目平滑移动到新位置，新增条目淡入
+                            modifier = Modifier.animateItem(),
+                            menu = if (item == longPressItem) {
+                                { menuContent(item) }
+                            } else null
+                        )
+                    }
                 }
             }
         }
@@ -174,21 +263,18 @@ fun FileListItem(
     menu: (@Composable () -> Unit)? = null
 ) {
     // MT 风格：多选只用整行纯色高亮表达选中态，不叠加勾选图标。
-    val targetBg = when {
+    val bgTarget = when {
         isSelected -> MAStyle.selectedRowBg()
         isHighlighted -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.28f)
         else -> Color.Transparent
     }
-    val bg by animateColorAsState(
-        targetValue = targetBg,
-        animationSpec = tween(MAAnim.ShortMs),
-        label = "rowBg"
-    )
+    // 选中 / 取消选中 / 高亮：整行颜色渐变，而不是瞬间换色
+    val bg by animateColorAsState(bgTarget, tween(MAMotion.Short), label = "rowBg")
     val thresholdPx = with(LocalDensity.current) { 88.dp.toPx() }
 
-    Box {
+    Box(modifier) {
         Row(
-            modifier = modifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .height(MAStyle.RowHeight)
                 .background(bg)

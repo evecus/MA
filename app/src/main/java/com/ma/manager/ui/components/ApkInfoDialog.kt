@@ -1,5 +1,12 @@
 package com.ma.manager.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import com.ma.manager.ui.theme.MAMotion
+import com.ma.manager.ui.theme.MAAlertDialog
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -41,11 +48,19 @@ fun ApkInfoDialog(
     var showOverwriteConfirm by remember { mutableStateOf(false) }
     val warning = ApkInfoUtil.installWarning(info)
 
-    AlertDialog(
+    MAAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("APK 信息") },
         text = {
-            if (info == null) {
+            // 「正在解析」→ 详情：淡入淡出 + 对话框高度平滑增长
+            AnimatedContent(
+                targetState = info == null,
+                transitionSpec = {
+                    fadeIn(tween(MAMotion.Medium)) togetherWith fadeOut(tween(MAMotion.Fast))
+                },
+                label = "apkInfoState"
+            ) { loading ->
+            if (loading) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -59,6 +74,7 @@ fun ApkInfoDialog(
                     }
                 }
             } else {
+                val info = info ?: return@AnimatedContent
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -144,6 +160,7 @@ fun ApkInfoDialog(
                     }
                 }
             }
+            }
         },
         confirmButton = {
             // FlowRow: five buttons do not fit on one line on narrow screens.
@@ -169,7 +186,7 @@ fun ApkInfoDialog(
     )
 
     if (showOverwriteConfirm) {
-        AlertDialog(
+        MAAlertDialog(
             onDismissRequest = { showOverwriteConfirm = false },
             title = { Text("是否覆盖安装？") },
             text = {

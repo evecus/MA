@@ -1,5 +1,14 @@
 package com.ma.manager.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import com.ma.manager.ui.theme.MAMotion
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
@@ -231,9 +240,16 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
 @Composable
 private fun MASwitch(checked: Boolean) {
     val dark = MAStyle.isDark()
-    val offset by animateDpAsState(if (checked) 14.dp else 0.dp, label = "thumb")
-    val track = if (checked) Color(0xFF90CAF9) else if (dark) Color(0xFF5A5A5A) else Color(0xFFBDBDBD)
-    val thumb = if (checked) MABlue else if (dark) Color(0xFFB0B0B0) else Color(0xFFF5F5F5)
+    // 滑块带回弹地滑过去，轨道 / 滑块颜色同步渐变，按下状态切换时不再瞬间换色
+    val offset by animateDpAsState(
+        if (checked) 14.dp else 0.dp,
+        animationSpec = MAMotion.bouncy(),
+        label = "thumb"
+    )
+    val trackTarget = if (checked) Color(0xFF90CAF9) else if (dark) Color(0xFF5A5A5A) else Color(0xFFBDBDBD)
+    val thumbTarget = if (checked) MABlue else if (dark) Color(0xFFB0B0B0) else Color(0xFFF5F5F5)
+    val track by animateColorAsState(trackTarget, tween(MAMotion.Short), label = "track")
+    val thumb by animateColorAsState(thumbTarget, tween(MAMotion.Short), label = "thumbColor")
     Box(Modifier.width(34.dp).height(24.dp), contentAlignment = Alignment.CenterStart) {
         Box(
             Modifier
@@ -284,7 +300,17 @@ private fun ClickRow(title: String, subtitle: String, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Text(title, fontSize = 16.sp, color = MAStyle.nameColor())
-        Text(subtitle, fontSize = 13.sp, color = MAStyle.dateColor())
+        // 点击切换默认排序 / 默认路径时，副标题上滑换入
+        AnimatedContent(
+            targetState = subtitle,
+            transitionSpec = {
+                (slideInVertically(tween(MAMotion.Short)) { it / 2 } + fadeIn(tween(MAMotion.Short))) togetherWith
+                    (slideOutVertically(tween(MAMotion.Short)) { -it / 2 } + fadeOut(tween(MAMotion.Fast)))
+            },
+            label = "clickRowSubtitle"
+        ) { t ->
+            Text(t, fontSize = 13.sp, color = MAStyle.dateColor())
+        }
     }
 }
 

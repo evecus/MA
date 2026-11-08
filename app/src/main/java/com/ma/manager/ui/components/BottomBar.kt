@@ -1,6 +1,14 @@
 package com.ma.manager.ui.components
 
+import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.getValue
+import com.ma.manager.ui.theme.MAMotion
+import com.ma.manager.ui.theme.pressScale
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -35,6 +43,9 @@ fun BottomActionBar(
 ) {
     val dark = MAStyle.barIcon()
     val light = MAStyle.barIconLight()
+    // 后退 / 前进可用状态变化时，图标颜色渐变
+    val backColor by animateColorAsState(if (canGoBack) dark else light, tween(MAMotion.Short), label = "backColor")
+    val forwardColor by animateColorAsState(if (canGoForward) dark else light, tween(MAMotion.Short), label = "forwardColor")
     Column(
         modifier
             .fillMaxWidth()
@@ -42,8 +53,8 @@ fun BottomActionBar(
             .navigationBarsPadding()
     ) {
         Row(Modifier.fillMaxWidth().height(45.dp)) {
-            BarCell(onBack, canGoBack) { icon(this, Kind.BACK, if (canGoBack) dark else light, light) }
-            BarCell(onForward, canGoForward) { icon(this, Kind.FORWARD, if (canGoForward) dark else light, light) }
+            BarCell(onBack, canGoBack) { icon(this, Kind.BACK, backColor, light) }
+            BarCell(onForward, canGoForward) { icon(this, Kind.FORWARD, forwardColor, light) }
             BarCell(onNew, true) { icon(this, Kind.PLUS, dark, light) }
             BarCell(onSync, true) { icon(this, Kind.SWAP, dark, light) }
             BarCell(onUp, true) { icon(this, Kind.UP, dark, light) }
@@ -59,14 +70,21 @@ private fun RowScope.BarCell(
     enabled: Boolean,
     draw: DrawScope.() -> Unit
 ) {
+    val source = remember { MutableInteractionSource() }
     Box(
         Modifier
             .weight(1f)
             .fillMaxHeight()
-            .clickable(enabled = enabled, onClick = onClick),
+            // 水波纹保持在整格，只让图标本身按压缩放
+            .clickable(
+                interactionSource = source,
+                indication = LocalIndication.current,
+                enabled = enabled,
+                onClick = onClick
+            ),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(Modifier.size(24.dp)) { draw() }
+        Canvas(Modifier.size(24.dp).pressScale(source, 0.74f)) { draw() }
     }
 }
 

@@ -1,5 +1,19 @@
 package com.ma.manager.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.rotate
+import com.ma.manager.ui.theme.MAMotion
+import com.ma.manager.ui.theme.pressClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -30,7 +44,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -72,7 +85,9 @@ fun SideDrawerContent(
     onBookmarkRemove: (Long) -> Unit,
     onBookmarkAdd: () -> Unit,
     onClose: () -> Unit,
-    onRequestRoot: () -> Unit = {}
+    onRequestRoot: () -> Unit = {},
+    /** 抽屉是否正在打开：用来在每次打开时重播存储进度条的生长动画。 */
+    isOpen: Boolean = true
 ) {
     var localOpen by remember { mutableStateOf(true) }
     var bookmarkOpen by remember { mutableStateOf(true) }
@@ -121,7 +136,12 @@ fun SideDrawerContent(
 
         // ----------------------------------------------------------- local
         SectionTitle("本地", expanded = localOpen, onToggle = { localOpen = !localOpen })
-        if (localOpen) {
+        AnimatedVisibility(
+            visible = localOpen,
+            enter = expandVertically(tween(MAMotion.Medium, easing = MAMotion.Standard)) + fadeIn(tween(MAMotion.Short)),
+            exit = shrinkVertically(tween(MAMotion.Short, easing = MAMotion.Standard)) + fadeOut(tween(MAMotion.Fast))
+        ) {
+        Column {
             FileHelper.getStorageEntries().forEach { (title, path, subtitle) ->
                 val showUsage = path == "/" || path == "/storage/emulated/0"
                 if (showUsage) {
@@ -131,6 +151,7 @@ fun SideDrawerContent(
                         title = title,
                         used = used,
                         total = total,
+                        isOpen = isOpen,
                         onClick = {
                             onNavigate(path)
                             onClose()
@@ -161,6 +182,7 @@ fun SideDrawerContent(
                     onClose()
                 }
             )
+                }
         }
 
         // -------------------------------------------------------- bookmarks
@@ -191,7 +213,12 @@ fun SideDrawerContent(
                 }
             }
         )
-        if (bookmarkOpen) {
+        AnimatedVisibility(
+            visible = bookmarkOpen,
+            enter = expandVertically(tween(MAMotion.Medium, easing = MAMotion.Standard)) + fadeIn(tween(MAMotion.Short)),
+            exit = shrinkVertically(tween(MAMotion.Short, easing = MAMotion.Standard)) + fadeOut(tween(MAMotion.Fast))
+        ) {
+        Column(Modifier.animateContentSize(tween(MAMotion.Medium, easing = MAMotion.Standard))) {
             if (bookmarks.isEmpty()) {
                 Text(
                     "暂无书签，点击右上角图标添加当前路径",
@@ -210,11 +237,17 @@ fun SideDrawerContent(
                     onRemove = { onBookmarkRemove(bm.id) }
                 )
             }
+                }
         }
 
         // ------------------------------------------------------------ tools
         SectionTitle("工具", expanded = toolsOpen, onToggle = { toolsOpen = !toolsOpen })
-        if (toolsOpen) {
+        AnimatedVisibility(
+            visible = toolsOpen,
+            enter = expandVertically(tween(MAMotion.Medium, easing = MAMotion.Standard)) + fadeIn(tween(MAMotion.Short)),
+            exit = shrinkVertically(tween(MAMotion.Short, easing = MAMotion.Standard)) + fadeOut(tween(MAMotion.Fast))
+        ) {
+        Column {
             ToolItem(Icons.Default.Terminal, "终端模拟器") { onTool(ToolAction.TERMINAL); onClose() }
             ToolItem(Icons.Default.Edit, "文本编辑器") { onTool(ToolAction.TEXT_EDITOR); onClose() }
             ToolItem(Icons.Default.Image, "图片查看器") { onTool(ToolAction.IMAGE_VIEWER); onClose() }
@@ -225,6 +258,7 @@ fun SideDrawerContent(
             ToolItem(Icons.Default.ColorLens, "屏幕取色") { onTool(ToolAction.COLOR_PICKER); onClose() }
             ToolItem(Icons.Default.Extension, "插件管理") { onTool(ToolAction.PLUGINS); onClose() }
             ToolItem(Icons.Default.History, "Activity记录") { onTool(ToolAction.ACTIVITY_LOG); onClose() }
+                }
         }
         Spacer(Modifier.height(16.dp))
         Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
@@ -255,11 +289,16 @@ private fun SectionTitle(
             modifier = Modifier.weight(1f)
         )
         extra()
+        val arrowRotation by animateFloatAsState(
+            targetValue = if (expanded) 180f else 0f,
+            animationSpec = tween(MAMotion.Medium, easing = MAMotion.Standard),
+            label = "sectionArrow"
+        )
         Icon(
-            if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            Icons.Default.KeyboardArrowDown,
             contentDescription = null,
             tint = MAStyle.nameColor(),
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(24.dp).rotate(arrowRotation)
         )
     }
 }
@@ -289,7 +328,7 @@ private fun DrawerItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .pressClickable(pressedScale = 0.97f, onClick = onClick)
             .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -317,10 +356,22 @@ private fun StorageUsageItem(
     title: String,
     used: Long,
     total: Long,
+    isOpen: Boolean,
     onClick: () -> Unit
 ) {
-    val ratio = if (total > 0) (used.toFloat() / total).coerceIn(0f, 1f) else 0f
-    val percent = (ratio * 100f).toInt()
+    val targetRatio = if (total > 0) (used.toFloat() / total).coerceIn(0f, 1f) else 0f
+    val percent = (targetRatio * 100f).toInt()
+    // 每次打开抽屉，进度条从 0 生长到实际占用
+    val grow = remember { Animatable(0f) }
+    LaunchedEffect(isOpen, targetRatio) {
+        if (isOpen) {
+            grow.snapTo(0f)
+            grow.animateTo(targetRatio, tween(700, delayMillis = 120, easing = MAMotion.Standard))
+        } else if (grow.value == 0f) {
+            grow.snapTo(targetRatio)
+        }
+    }
+    val ratio = grow.value
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -416,7 +467,7 @@ private fun ToolItem(icon: ImageVector, title: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .clickable(onClick = onClick)
+            .pressClickable(pressedScale = 0.97f, onClick = onClick)
             .padding(horizontal = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
