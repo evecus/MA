@@ -2,6 +2,8 @@ package com.ma.manager.ui.theme
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -124,10 +126,17 @@ fun ShadowToRight(modifier: Modifier = Modifier) {
  */
 @Composable
 fun DualPaneShadows(activeSide: PaneSide, modifier: Modifier = Modifier) {
-    // The inactive pane is the one opposite to the active pane.
-    val inactiveIsLeft = activeSide == PaneSide.RIGHT
+    // 切换活动窗口时三条阴影整体镜像，用短淡入淡出过渡，避免瞬切。
+    Crossfade(
+        targetState = activeSide,
+        animationSpec = tween(MAAnim.ShortMs),
+        label = "DualPaneShadows",
+        modifier = modifier.fillMaxSize()
+    ) { side ->
+        // The inactive pane is the one opposite to the active pane.
+        val inactiveIsLeft = side == PaneSide.RIGHT
 
-    Box(modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
         // ---- centre divider: shadow into the inactive pane ----
         Row(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -172,4 +181,5 @@ fun DualPaneShadows(activeSide: PaneSide, modifier: Modifier = Modifier) {
             }
         }
     }
+    }   // Crossfade content
 }

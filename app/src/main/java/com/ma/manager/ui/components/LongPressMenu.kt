@@ -2,6 +2,8 @@ package com.ma.manager.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,12 +27,14 @@ import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,6 +45,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.ma.manager.data.FileItem
 import com.ma.manager.data.FileKind
 import com.ma.manager.data.PaneSide
+import com.ma.manager.ui.theme.MAAnim
 import com.ma.manager.ui.theme.MAStyle
 
 private class MenuCell(
@@ -87,6 +92,19 @@ fun LongPressMenu(
     onEditZipEntry: () -> Unit = {}
 ) {
     if (!expanded) return
+    // 菜单淡入 + 轻微放大（Dialog 由系统窗口管理，关闭沿用系统动画）
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val menuAlpha by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = tween(MAAnim.ShortMs),
+        label = "menuAlpha"
+    )
+    val menuScale by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0.94f,
+        animationSpec = tween(MAAnim.ShortMs),
+        label = "menuScale"
+    )
     val inZip = item.isZipEntry
     var toolsExpanded by remember { mutableStateOf(false) }
 
@@ -147,7 +165,14 @@ fun LongPressMenu(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp)
+                .graphicsLayer {
+                    alpha = menuAlpha
+                    scaleX = menuScale
+                    scaleY = menuScale
+                },
             shape = RoundedCornerShape(2.dp),
             color = MAStyle.barBg(),
             shadowElevation = 12.dp

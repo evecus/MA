@@ -29,9 +29,12 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.ma.manager.ui.theme.DualPaneShadows
+import com.ma.manager.ui.theme.MAAnim
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -110,15 +113,42 @@ fun MainScreen(
         }
     }
 
+    // 统一页面切换动画：原先 12 处 `return` 会瞬间替换整棵内容树，
+    // 现在收敛为一个 AnimatedContent，screenKey 变化即触发进出过渡。
+    // 所有 remember 状态与 BackHandler 留在容器外层，避免过渡期间
+    // 旧 content 被 dispose 时丢状态（尤其 currentTool 自身）。
+    // currentTool 是 by remember 委托属性，无法智能转换；先捕获到局部 val，
+    // 才能安全地用于 Set<ToolAction> 的包含判断与字符串插值。
+    val activeTool: ToolAction? = currentTool
+    val screenKey: String = when {
+        activeTool != null && activeTool !in DIALOG_ONLY_TOOLS -> "tool:$activeTool"
+        viewModel.imageViewerPath != null -> "image"
+        viewModel.hexViewerPath != null -> "hex"
+        viewModel.mediaPlaylist != null -> "media"
+        viewModel.showTextEditor -> "editor"
+        else -> MAAnim.SCREEN_LIST
+    }
+
+    AnimatedContent(
+        targetState = screenKey,
+        transitionSpec = { MAAnim.screenTransform(screenKey != MAAnim.SCREEN_LIST) },
+        label = "MainScreen"
+    ) { key ->
+    // 过渡期间旧 content 仍会重组：必须用传入的 key 快照分发，
+    // 不能直接读外层可变的 currentTool，否则旧页面会瞬间变成新页面。
+    val toolForKey: ToolAction? = if (key.startsWith("tool:")) {
+        runCatching { ToolAction.valueOf(key.removePrefix("tool:")) }.getOrNull()
+    } else null
+
     // ---- full-screen pages ----
-    when (currentTool) {
+    when (toolForKey) {
         ToolAction.TERMINAL -> {
             TerminalScreen(onClose = { currentTool = null })
-            return
+            return@AnimatedContent
         }
         ToolAction.SETTINGS -> {
             SettingsScreen(onClose = { currentTool = null })
-            return
+            return@AnimatedContent
         }
         ToolAction.BOOKMARKS -> {
             BookmarksScreen(
@@ -127,14 +157,14 @@ fun MainScreen(
                 onRemove = { viewModel.removeBookmark(it) },
                 onClose = { currentTool = null }
             )
-            return
+            return@AnimatedContent
         }
         ToolAction.TRASH -> {
             TrashScreen(
                 onClose = { currentTool = null },
                 onEmpty = { viewModel.emptyTrash() }
             )
-            return
+            return@AnimatedContent
         }
         ToolAction.TEXT_EDITOR -> {
             TextEditorScreen(
@@ -147,11 +177,11 @@ fun MainScreen(
                 },
                 onClose = { currentTool = null }
             )
-            return
+            return@AnimatedContent
         }
         ToolAction.APK_EXTRACT -> {
             ApkExtractorScreen(onClose = { currentTool = null })
-            return
+            return@AnimatedContent
         }
         ToolAction.APK_INFO -> {
             val p = fullApkPath
@@ -159,62 +189,66 @@ fun MainScreen(
                 ?: activeState.items.firstOrNull { it.path in activeState.selectedItems && !it.isDirectory }?.path
                 ?: activeState.currentPath
             ApkInfoScreen(apkPath = p, onClose = { currentTool = null })
-            return
+            return@AnimatedContent
         }
         ToolAction.IMAGE_VIEWER -> {
             ImageViewerScreen(
                 initialPath = activeState.items.firstOrNull { it.path in activeState.selectedItems && !it.isDirectory }?.path,
                 onClose = { currentTool = null }
             )
-            return
+            return@AnimatedContent
         }
         ToolAction.HEX_VIEWER -> {
             HexViewerScreen(
                 initialPath = activeState.items.firstOrNull { it.path in activeState.selectedItems && !it.isDirectory }?.path,
                 onClose = { currentTool = null }
             )
-            return
-        }
-        ToolAction.PLUGINS,
-        ToolAction.REMOTE,
-        ToolAction.COLOR_PICKER,
-        ToolAction.FTP,
-        ToolAction.ACTIVITY_LOG -> {
-            AlertDialog(
-                onDismissRequest = { currentTool = null },
-                title = { Text("功能开发中") },
-                text = {
-                    Text(
-                        when (currentTool) {
-                            ToolAction.PLUGINS -> "插件管理：后续支持自定义脚本与翻译引擎。"
-                            ToolAction.REMOTE -> "远程管理：HTTP/FTP 服务即将加入。"
-                            ToolAction.COLOR_PICKER -> "屏幕取色：需要悬浮窗权限，后续实现。"
-                            ToolAction.FTP -> "FTP 客户端：连接远程服务器浏览文件。"
-                            ToolAction.ACTIVITY_LOG -> "Activity 记录：查看最近打开的路径与操作。"
-                            else -> "敬请期待"
-                        }
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = { currentTool = null }) { Text("确定") }
-                }
-            )
+            return@AnimatedContent
         }
         else -> {}
     }
 
+    // 这 5 项只是叠在文件列表上的「功能开发中」提示，不是全屏页面：
+    // 不参与 screenKey（不触发页面转场），仅用 Material3 AlertDialog 自带淡入。
+    if (activeTool != null && activeTool in DIALOG_ONLY_TOOLS) {
+        AlertDialog(
+            onDismissRequest = { currentTool = null },
+            title = { Text("功能开发中") },
+            text = {
+                Text(
+                    when (activeTool) {
+                        ToolAction.PLUGINS -> "插件管理：后续支持自定义脚本与翻译引擎。"
+                        ToolAction.REMOTE -> "远程管理：HTTP/FTP 服务即将加入。"
+                        ToolAction.COLOR_PICKER -> "屏幕取色：需要悬浮窗权限，后续实现。"
+                        ToolAction.FTP -> "FTP 客户端：连接远程服务器浏览文件。"
+                        ToolAction.ACTIVITY_LOG -> "Activity 记录：查看最近打开的路径与操作。"
+                        else -> "敬请期待"
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { currentTool = null }) { Text("确定") }
+            }
+        )
+    }
+
     // ---- full-screen viewers (click dispatch targets) ----
-    viewModel.imageViewerPath?.let { path ->
+    // 按 key 快照分发：过渡期间旧 content 仍会重组，若直接读 viewModel 的
+    // 可变 path，退出动画会闪成列表/空白。remember(key) 把参数冻结在进页那一刻。
+    if (key == "image") {
+        val path = remember(key) { viewModel.imageViewerPath }
         ImageViewerScreen(initialPath = path, onClose = { viewModel.dismissImageViewer() })
-        return
+        return@AnimatedContent
     }
-    viewModel.hexViewerPath?.let { path ->
+    if (key == "hex") {
+        val path = remember(key) { viewModel.hexViewerPath }
         HexViewerScreen(initialPath = path, onClose = { viewModel.dismissHexViewer() })
-        return
+        return@AnimatedContent
     }
-    viewModel.mediaPlaylist?.let { list ->
+    if (key == "media") {
+        val paths = remember(key) { viewModel.mediaPlaylist.orEmpty() }
         MediaPlayerScreen(
-            paths = list,
+            paths = paths,
             startIndex = viewModel.mediaStartIndex,
             onClose = { viewModel.dismissMediaPlayer() },
             onOpenSystem = { path ->
@@ -222,7 +256,7 @@ fun MainScreen(
                 viewModel.openWithSystem(FileItem.fromFile(java.io.File(path)))
             }
         )
-        return
+        return@AnimatedContent
     }
 
     // Long-press menu content shared by both panes (single vs batch).
@@ -432,15 +466,21 @@ fun MainScreen(
                 )
             },
             snackbarHost = {
-                snackMsg?.let { msg ->
-                    Snackbar(
-                        action = {
-                            TextButton(onClick = { snackMsg = null }) { Text("关闭") }
+                AnimatedVisibility(
+                    visible = snackMsg != null,
+                    enter = MAAnim.ToastEnter,
+                    exit = MAAnim.ToastExit
+                ) {
+                    snackMsg?.let { msg ->
+                        Snackbar(
+                            action = {
+                                TextButton(onClick = { snackMsg = null }) { Text("关闭") }
+                            }
+                        ) { Text(msg) }
+                        LaunchedEffect(msg) {
+                            kotlinx.coroutines.delay(2500)
+                            snackMsg = null
                         }
-                    ) { Text(msg) }
-                    LaunchedEffect(msg) {
-                        kotlinx.coroutines.delay(2500)
-                        snackMsg = null
                     }
                 }
             }
@@ -737,7 +777,7 @@ fun MainScreen(
         )
     }
 
-        if (viewModel.showTextEditor && viewModel.imageViewerPath == null && viewModel.hexViewerPath == null) {
+        if (key == "editor") {
             TextEditorScreen(
                 path = viewModel.textEditorPath,
                 initialContent = viewModel.textEditorContent,
@@ -749,8 +789,15 @@ fun MainScreen(
                 onClose = { viewModel.showTextEditor = false }
             )
         }
+    }   // AnimatedContent content lambda
 }
 
+
+/** 只在文件列表上弹提示框、不切换全屏页面的 tool（不参与页面转场动画）。 */
+private val DIALOG_ONLY_TOOLS = setOf(
+    ToolAction.PLUGINS, ToolAction.REMOTE, ToolAction.COLOR_PICKER,
+    ToolAction.FTP, ToolAction.ACTIVITY_LOG
+)
 
 /** True when "back" should still walk up the directory tree (stops at / and the storage root). */
 private fun canGoUp(path: String): Boolean {

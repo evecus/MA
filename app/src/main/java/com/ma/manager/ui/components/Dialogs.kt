@@ -1,6 +1,8 @@
 package com.ma.manager.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -15,6 +17,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ma.manager.data.ConflictResolution
+import com.ma.manager.ui.theme.MAAnim
 import com.ma.manager.data.FileItem
 import com.ma.manager.data.SortBy
 import com.ma.manager.util.ApkInfo
@@ -593,6 +596,11 @@ fun OpProgressDialog(progress: com.ma.manager.data.OpProgress, onCancel: () -> U
             }
         )
     } else {
+        val animatedFraction by animateFloatAsState(
+            targetValue = progress.fraction,
+            animationSpec = tween(MAAnim.ShortMs),
+            label = "progress"
+        )
         AlertDialog(
             onDismissRequest = {},
             title = { Text(progress.title) },
@@ -605,7 +613,7 @@ fun OpProgressDialog(progress: com.ma.manager.data.OpProgress, onCancel: () -> U
                     )
                     Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(
-                        progress = { progress.fraction },
+                        progress = { animatedFraction },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

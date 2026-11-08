@@ -1,6 +1,8 @@
 package com.ma.manager.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,6 +11,7 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import com.ma.manager.ui.theme.MAAnim
 import com.ma.manager.ui.theme.MAStyle
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -171,11 +174,16 @@ fun FileListItem(
     menu: (@Composable () -> Unit)? = null
 ) {
     // MT 风格：多选只用整行纯色高亮表达选中态，不叠加勾选图标。
-    val bg = when {
+    val targetBg = when {
         isSelected -> MAStyle.selectedRowBg()
         isHighlighted -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.28f)
         else -> Color.Transparent
     }
+    val bg by animateColorAsState(
+        targetValue = targetBg,
+        animationSpec = tween(MAAnim.ShortMs),
+        label = "rowBg"
+    )
     val thresholdPx = with(LocalDensity.current) { 88.dp.toPx() }
 
     Box {
